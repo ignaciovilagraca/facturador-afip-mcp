@@ -17,3 +17,6 @@ __pycache__/
 .pytest_cache/
 dist/
 .DS_Store
+
+# Hook local de pre-commit: no va al repo (el directorio de plugins lo marca como posible fuga de credenciales)
+.githooks/

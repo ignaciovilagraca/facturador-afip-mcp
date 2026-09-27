@@ -353,7 +353,6 @@ Si creés que la clave privada quedó expuesta, no renueves: generá una clave n
 
 ```bash
 uv sync
-git config core.hooksPath .githooks   # bloquea commits con claves, certificados o el CUIT
 uv run pytest
 ```
 
