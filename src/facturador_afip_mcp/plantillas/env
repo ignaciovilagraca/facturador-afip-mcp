@@ -1,0 +1,16 @@
+# CUIT del emisor, sin guiones
+AFIP_CUIT=
+
+# Datos del emisor que se guardan con cada factura (para generar el PDF más adelante)
+AFIP_RAZON_SOCIAL=
+AFIP_DOMICILIO_COMERCIAL=
+AFIP_CONDICION_IVA=
+AFIP_INGRESOS_BRUTOS=
+AFIP_INICIO_ACTIVIDADES=
+
+# Opcional: tope por comprobante, en pesos (el total por la cotización). Vacío: sin tope
+FACTURADOR_TOTAL_MAXIMO_ARS=
+
+# Cómo se confirma cada emisión en producción: auto (diálogo del sistema si hay, si no elicitation),
+# dialogo o elicitation
+FACTURADOR_CONFIRMACION=auto

@@ -1,0 +1,19 @@
+# Datos del usuario: nunca al repo (viven en la carpeta de datos, fuera del proyecto)
+certs/
+facturas/
+*.key
+*.csr
+*.crt
+*.pem
+*.p12
+.env
+.env.*
+perfil.json
+!src/facturador_afip_mcp/plantillas/perfil.json
+*.pdf
+
+.venv/
+__pycache__/
+.pytest_cache/
+dist/
+.DS_Store

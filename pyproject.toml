@@ -1,0 +1,33 @@
+[project]
+name = "facturador-afip-mcp"
+version = "0.1.0"
+description = "Servidor MCP para emitir facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E"
+readme = "README.md"
+authors = [
+    { name = "ignaciovilagraca", email = "ivila@dc.uba.ar" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=50.0.1",
+    "mcp>=2.2,<3",
+    "pillow>=12.3.0",
+    "qrcode>=8.2",
+    "reportlab>=5.0.1",
+]
+
+[project.scripts]
+facturador-afip-mcp = "facturador_afip_mcp.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
