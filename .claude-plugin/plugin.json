@@ -9,6 +9,10 @@
   },
   "homepage": "https://github.com/ignaciovilagraca/facturador-afip-mcp#readme",
   "repository": "https://github.com/ignaciovilagraca/facturador-afip-mcp",
+  "documentationUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp#readme",
+  "privacyPolicyUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp#privacidad",
+  "supportUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp/issues",
+  "termsOfServiceUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp/blob/main/LICENSE",
   "license": "MIT",
   "keywords": [
     "arca",
