@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "facturador-afip-mcp",
   "display_name": "Facturador ARCA",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Prepará, validá y emití facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E.",
   "long_description": "Emite comprobantes electrónicos de ARCA desde Claude. Cada factura se valida primero en homologación (sin valor fiscal). Para emitirla en producción, una persona confirma en una tarjeta dentro del chat tipeando el número de comprobante: el modelo no ve ese formulario y no puede confirmar por su cuenta. La clave privada y el certificado se leen de tu carpeta de datos y nunca pasan por el modelo.\n\nAntes de usarlo necesitás el alta en ARCA (certificados, autorizaciones y punto de venta). La herramienta estado_configuracion muestra qué falta.",
   "author": {

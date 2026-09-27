@@ -110,6 +110,14 @@ def preparar(f, env, auth, pto=None):
     f["tipo"] = tipo_de(f)
     if not f.get("items"):
         raise ErrorArca("La factura no tiene ítems")
+    for i, it in enumerate(f["items"], 1):
+        if not isinstance(it, dict) or not it.get("descripcion") or it.get("precio") in (None, ""):
+            raise ErrorArca(f"El ítem {i} tiene que tener descripcion y precio, por ejemplo "
+                            '{"descripcion": "Consultoría", "cantidad": 1, "precio": 1000}')
+        try:
+            Decimal(str(it["precio"])), Decimal(str(it.get("cantidad", 1)))
+        except ArithmeticError as e:
+            raise ErrorArca(f"El precio o la cantidad del ítem {i} no es un número: {it}") from e
     if f["tipo"] not in TIPOS_COMUNES and f["tipo"] != "E":
         raise ErrorArca(f"Tipo de comprobante no válido: {f['tipo']} (válidos: A, B, C, E)")
     if f["tipo"] == "E" and f.get("nota_credito_de"):

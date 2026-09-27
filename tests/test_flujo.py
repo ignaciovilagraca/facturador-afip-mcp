@@ -266,6 +266,13 @@ class ClienteConApps(ClientExtension):
         return {"mimeTypes": ["text/html;profile=mcp-app"]}
 
 
+async def abrir(c, borrador):
+    """Lo que hace la tarjeta al abrirse: pide el resumen y un token para esta apertura."""
+    error, e = await llamar(c, "estado_confirmacion", borrador_id=borrador)
+    assert not error and e["pendiente"], e
+    return e["token"]
+
+
 def orden(datos, valor):
     env = datos.raiz / ".env"
     env.write_text(env.read_text().replace("FACTURADOR_CONFIRMACION=elicitation", f"FACTURADOR_CONFIRMACION={valor}"))
@@ -283,9 +290,11 @@ async def test_tarjeta_mcp_apps(datos, arca):
         borrador = (await validar(c))["borrador_id"]
         r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
         assert not r.is_error
-        token = r.structured_content["token"]
-        assert token not in r.content[0].text  # el modelo lee el texto, no el token
+        # Nada secreto en la respuesta que puede leer el modelo, ni en el texto ni en structuredContent
+        assert r.structured_content == {"confirmacion": "tarjeta", "borrador_id": borrador, "numero": "00004-00000001"}
         assert "Todavía no se emitió nada" in r.content[0].text
+        token = await abrir(c, borrador)
+        assert token not in json.dumps(datos.leer_borrador(borrador))  # solo se guarda el hash
         assert cb.mensajes == [] and all(e[0] == "homo" for e in arca.envios)
 
         # Token o número equivocados: no emite
@@ -307,14 +316,14 @@ async def test_tarjeta_vencida_o_numero_cambiado(datos, arca, monkeypatch):
     orden(datos, "apps")
     async with Client(server.mcp, mode="legacy", extensions=[ClienteConApps()]) as c:
         borrador = (await validar(c))["borrador_id"]
-        r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
-        token = r.structured_content["token"]
+        await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        token = await abrir(c, borrador)
         arca.ultimos[("prod", 4, 11)] = 1  # alguien emitió otro comprobante en el medio
         error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
         assert error and "alguien emitió otro" in r
 
-        r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
-        token = r.structured_content["token"]
+        await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        token = await abrir(c, borrador)
         b = datos.leer_borrador(borrador)
         b["pendiente"]["expira"] = "2000-01-01T00:00:00+00:00"
         datos.guardar_borrador(b)
@@ -343,3 +352,51 @@ async def test_datos_aprobados_distintos_no_emite(datos, arca, campo, valor):
         error, r = await llamar(c, "emitir_en_produccion", **{**args, campo: valor})
     assert error and "no coinciden" in r
     assert all(e[0] == "homo" for e in arca.envios)
+
+
+async def test_tarjeta_cancelar_y_estado(datos, arca):
+    orden(datos, "apps")
+    async with Client(server.mcp, mode="legacy", extensions=[ClienteConApps()]) as c:
+        borrador = (await validar(c))["borrador_id"]
+        await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        token = await abrir(c, borrador)
+
+        # Cada apertura rota el token: el de la apertura anterior ya no sirve
+        otro = await abrir(c, borrador)
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
+        assert error and "Token" in r
+        token = otro
+        error, e = await llamar(c, "cancelar_emision", borrador_id=borrador, token="falso")
+        assert e["estado"] == "validado"
+        assert await abrir(c, borrador)  # un token falso no cancela
+        token = await abrir(c, borrador)
+
+        # Al volver a abrir la conversación, la tarjeta pregunta y ya no está pendiente
+        error, e = await llamar(c, "cancelar_emision", borrador_id=borrador, token=token)
+        assert not error and not e["pendiente"]
+        error, e = await llamar(c, "estado_confirmacion", borrador_id=borrador)
+        assert not e["pendiente"] and e["estado"] == "validado" and "token" not in e
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
+        assert error and "se canceló" in r
+
+        # Emitida desde una tarjeta nueva: la vieja muestra el comprobante
+        await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        nuevo = await abrir(c, borrador)
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=nuevo, numero="00004-00000001")
+        assert not error
+        error, e = await llamar(c, "estado_confirmacion", borrador_id=borrador)
+        assert e["estado"] == "emitido" and e["comprobante"] == "Factura C 00004-00000001" and "token" not in e
+        error, lista = await llamar(c, "listar_borradores")
+        lista = lista["result"] if isinstance(lista, dict) else lista
+        assert lista[0]["emision"]["entorno"] == "prod"
+
+        error, e = await llamar(c, "estado_confirmacion", borrador_id="C-2026-01-01-noexiste")
+        assert e["estado"] == "descartado"
+    assert len([e for e in arca.envios if e[0] == "prod"]) == 1
+
+
+async def test_item_sin_precio_da_error_claro(datos, arca):
+    async with Client(server.mcp, mode="legacy") as c:
+        error, r = await llamar(c, "validar_en_homologacion",
+                                factura={**FACTURA_C, "items": [{"descripcion": "x", "importe": 10}]})
+    assert error and "tiene que tener descripcion y precio" in r

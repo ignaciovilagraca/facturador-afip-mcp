@@ -117,18 +117,53 @@
 
   function mostrarResultado(resultado) {
     $("cargando").hidden = true;
-    const sc = resultado?.structuredContent;
+    // Algunos clientes pasan los datos solo como texto JSON
+    let sc = resultado?.structuredContent;
+    if (!sc) { try { sc = JSON.parse(texto(resultado)); } catch { sc = null; } }
     if (resultado?.isError) {
       mostrarMensaje("No se emitió nada", texto(resultado), "error");
-    } else if (sc?.token) {
-      datos = sc;
-      $("resumen").textContent = sc.resumen;
-      $("numero-esperado").textContent = sc.numero;
-      $("confirmar").hidden = false;
-      $("numero").focus();
+    } else if (sc?.confirmacion === "tarjeta") {
+      datos = { borrador_id: sc.borrador_id, numero: sc.numero };
+      verificarEstado();
     } else {
       // La confirmación se hizo por otra vía (elicitation, permiso o diálogo): solo se muestra el resultado
       mostrarMensaje(sc?.emitida ? "Emitida" : "Emisión", texto(resultado), sc?.emitida ? "ok" : "");
+    }
+  }
+
+  async function llamar(nombre, args) {
+    const r = await pedir("tools/call", { name: nombre, arguments: args });
+    if (r?.isError) throw new Error(texto(r));
+    return r?.structuredContent || {};
+  }
+
+  function mostrarEstado(e) {
+    if (e.pendiente) {
+      datos = { ...datos, numero: e.numero, resumen: e.resumen, token: e.token };
+      $("resumen").textContent = datos.resumen;
+      $("numero-esperado").textContent = datos.numero;
+      $("mensaje").hidden = true;
+      $("confirmar").hidden = false;
+      $("numero").focus();
+    } else if (e.estado === "emitido") {
+      mostrarMensaje(`Emitida: ${e.comprobante}`, `CAE ${e.cae}`, "ok");
+    } else if (e.estado === "descartado") {
+      mostrarMensaje("Borrador descartado", "No se emitió nada.");
+    } else if (e.estado === "emitiendo") {
+      mostrarMensaje("Emisión sin terminar", "Se cortó mientras se enviaba a ARCA. Pedile a Claude que lo verifique "
+        + "antes de reintentar.", "error");
+    } else {
+      mostrarMensaje("Sin confirmar", `No se emitió ${datos.numero}: la confirmación se canceló o venció. `
+        + "Para emitirla, pedile a Claude que prepare la emisión de nuevo.");
+    }
+  }
+
+  // Al abrirse (también al volver a entrar a la conversación) pregunta al servidor si sigue pendiente
+  async function verificarEstado() {
+    try {
+      mostrarEstado(await llamar("estado_confirmacion", { borrador_id: datos.borrador_id }));
+    } catch (e) {
+      mostrarMensaje("Error", String(e.message || e), "error");
     }
   }
 
@@ -151,11 +186,20 @@
     $("emitir").disabled = $("numero").value.trim() !== datos?.numero;
   });
 
-  $("cancelar").addEventListener("click", () => {
-    mostrarMensaje("Cancelado", "No se emitió nada. La confirmación vence sola en 10 minutos.");
-    pedir("ui/update-model-context", {
-      content: [{ type: "text", text: `El usuario canceló la emisión de ${datos?.numero} desde la tarjeta. No se emitió nada.` }],
-    }).catch(() => {});
+  $("cancelar").addEventListener("click", async () => {
+    $("cancelar").disabled = true;
+    $("emitir").disabled = true;
+    try {
+      await llamar("cancelar_emision", { borrador_id: datos.borrador_id, token: datos.token });
+      mostrarMensaje("Cancelado", `No se emitió ${datos.numero}.`);
+      pedir("ui/update-model-context", {
+        content: [{ type: "text", text: `El usuario canceló en la tarjeta la emisión de ${datos.numero} `
+          + `(borrador ${datos.borrador_id}). No se emitió nada.` }],
+      }).catch(() => {});
+    } catch (e) {
+      mostrarMensaje("No se pudo cancelar", String(e.message || e) + "\n\nIgual no se emite nada si no tipeás el "
+        + "número; la confirmación vence sola en 10 minutos.", "error");
+    }
   });
 
   $("emitir").addEventListener("click", async () => {
@@ -190,7 +234,7 @@
   }).observe(document.documentElement);
 
   pedir("ui/initialize", {
-    appInfo: { name: "facturador-afip", version: "0.1.0" },
+    appInfo: { name: "facturador-afip", version: "0.1.3" },
     appCapabilities: {},
     protocolVersion: "2026-01-26",
   }).then((r) => {

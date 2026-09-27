@@ -186,7 +186,7 @@ async def enviar_emision(datos: Datos, em: Emision) -> dict:
         raise ErrorArca("El borrador cambió mientras se esperaba la confirmación. No se emitió nada.")
     borrador["estado"] = "emitiendo"
     borrador["pendiente"] = None
-    borrador["emision"] = {"inicio": _ahora(), "servicio": prep.servicio, "cbte_tipo": prep.cbte_tipo,
+    borrador["emision"] = {"inicio": _ahora(), "entorno": prep.env, "servicio": prep.servicio, "cbte_tipo": prep.cbte_tipo,
                            "punto_venta": prep.punto_venta, "numero": prep.numero}
     datos.guardar_borrador(borrador)
 
@@ -227,31 +227,71 @@ async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador
 
 
 # --- Confirmación en una tarjeta (MCP Apps) ---
-# emitir_en_produccion deja una confirmación pendiente con un token de un solo uso y el cliente muestra la tarjeta.
-# La persona tipea el número y la tarjeta llama a confirmar_emision, una herramienta que el cliente no le muestra
-# al modelo. El token va solo en structuredContent, que tampoco se agrega al contexto del modelo.
+# emitir_en_produccion deja una confirmación pendiente y el cliente muestra la tarjeta. La tarjeta pide el resumen y
+# un token con estado_confirmacion, una herramienta que el cliente no le muestra al modelo (visibility "app"), igual
+# que cancelar_emision y confirmar_emision. El token nunca va en una respuesta que lea el modelo: algunos clientes
+# le pasan el structuredContent. Cada apertura de la tarjeta rota el token, y confirmar lo consume.
 
 VIGENCIA_PENDIENTE = timedelta(minutes=10)
 
 
-def crear_pendiente(datos: Datos, em: Emision) -> str:
-    token = secrets.token_urlsafe(24)
+def crear_pendiente(datos: Datos, em: Emision):
     borrador = datos.leer_borrador(em.borrador["id"])
-    borrador["pendiente"] = {"token": hashlib.sha256(token.encode()).hexdigest(), "numero": em.numero,
+    borrador["pendiente"] = {"token": None, "numero": em.numero, "resumen": em.resumen,
                              "expira": (datetime.now(timezone.utc) + VIGENCIA_PENDIENTE).isoformat(timespec="seconds")}
     datos.guardar_borrador(borrador)
-    return token
+
+
+def _token_valido(pendiente: dict | None, token: str) -> bool:
+    return bool(pendiente and pendiente.get("token")) and hmac.compare_digest(
+        pendiente["token"], hashlib.sha256((token or "").encode()).hexdigest())
+
+
+def _vencido(pendiente: dict) -> bool:
+    return datetime.fromisoformat(pendiente["expira"]) < datetime.now(timezone.utc)
+
+
+def _estado(borrador: dict) -> dict:
+    e = borrador.get("emision") or {}
+    return {"pendiente": False, "estado": borrador["estado"], "comprobante": e.get("comprobante"), "cae": e.get("cae")}
+
+
+def abrir_pendiente(datos: Datos, borrador_id: str) -> dict:
+    """Lo que la tarjeta muestra al abrirse (también al volver a entrar a la conversación). Si la confirmación sigue
+    pendiente, genera un token nuevo para esta apertura."""
+    try:
+        borrador = datos.leer_borrador(borrador_id)
+    except ErrorArca:
+        return {"pendiente": False, "estado": "descartado"}
+    pendiente = borrador.get("pendiente")
+    if not pendiente or _vencido(pendiente):
+        return _estado(borrador)
+    token = secrets.token_urlsafe(24)
+    pendiente["token"] = hashlib.sha256(token.encode()).hexdigest()
+    datos.guardar_borrador(borrador)
+    return {**_estado(borrador), "pendiente": True, "numero": pendiente["numero"], "resumen": pendiente["resumen"],
+            "expira": pendiente["expira"], "token": token}
+
+
+def cancelar_pendiente(datos: Datos, borrador_id: str, token: str) -> dict:
+    borrador = datos.leer_borrador(borrador_id)
+    if _token_valido(borrador.get("pendiente"), token):
+        borrador["pendiente"] = None
+        borrador.setdefault("historial", []).append({"cuando": _ahora(), "evento": "emisión cancelada en la tarjeta"})
+        datos.guardar_borrador(borrador)
+    return _estado(borrador)
 
 
 async def confirmar_pendiente(datos: Datos, borrador_id: str, token: str, numero: str) -> dict:
     borrador = datos.leer_borrador(borrador_id)
     pendiente = borrador.get("pendiente")
     if not pendiente:
-        raise ErrorArca("No hay una confirmación pendiente para este borrador. No se emitió nada.")
-    if datetime.fromisoformat(pendiente["expira"]) < datetime.now(timezone.utc):
-        raise ErrorArca("La confirmación venció. Pedile a Claude que prepare la emisión de nuevo. No se emitió nada.")
-    if not hmac.compare_digest(pendiente["token"], hashlib.sha256((token or "").encode()).hexdigest()):
+        raise ErrorArca("No hay una confirmación pendiente para este borrador (se canceló, venció o ya se usó). "
+                        "No se emitió nada.")
+    if not _token_valido(pendiente, token):
         raise ErrorArca("Token de confirmación no válido. No se emitió nada.")
+    if _vencido(pendiente):
+        raise ErrorArca("La confirmación venció. Pedile a Claude que prepare la emisión de nuevo. No se emitió nada.")
     if (numero or "").strip() != pendiente["numero"]:
         raise ErrorArca(f"El número tipeado no coincide con {pendiente['numero']}. No se emitió nada.")
     # Un solo uso: se consume antes de enviar

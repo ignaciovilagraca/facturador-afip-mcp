@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import anyio.to_thread
 from importlib import resources
+from importlib.metadata import version
 
 from mcp.server.apps import Apps
 from mcp.server.mcpserver import Context, MCPServer
@@ -81,7 +82,9 @@ su clave privada.
 
 log = logging.getLogger("facturador_afip_mcp")
 datos = Datos.desde_entorno()
-TARJETA = "ui://facturador-afip/confirmar-emision.html"
+# La versión va en la URI: los clientes guardan la interfaz en caché por URI (Claude Desktop lo hace) y, sin la
+# versión, después de actualizar seguirían mostrando la tarjeta vieja.
+TARJETA = f"ui://facturador-afip/confirmar-emision-{version('facturador-afip-mcp')}.html"
 apps = Apps()
 apps.add_html_resource(TARJETA, (resources.files("facturador_afip_mcp") / "tarjeta.html").read_text(),
                        name="Confirmar emisión", prefers_border=False)
@@ -98,6 +101,7 @@ def _errores_como_herramienta(funcion):
     """ErrorArca es un error esperado: el modelo recibe el mensaje, sin traceback."""
     @functools.wraps(funcion)
     async def envuelta(*args, **kwargs):
+        log.info("herramienta %s(%s)", funcion.__name__, kwargs.get("borrador_id") or "")
         try:
             return await funcion(*args, **kwargs)
         except ErrorArca as e:
@@ -125,14 +129,14 @@ async def emitir_en_produccion(borrador_id: str, numero: str, receptor: str, tot
     if forma == "apps":
         em = await flujo.preparar_emision(datos, borrador_id)
         flujo.verificar_esperado(em, **esperado)
-        token = flujo.crear_pendiente(datos, em)
-        # El token va solo en structuredContent (para la tarjeta), no en el texto que lee el modelo
+        flujo.crear_pendiente(datos, em)
+        # Sin token ni nada secreto: algunos clientes le pasan el structuredContent al modelo
         return CallToolResult(
             content=[TextContent(type="text", text=(
                 f"Todavía no se emitió nada. Falta que la persona confirme en la tarjeta: tiene que escribir {em.numero} "
                 "y apretar Emitir. No vuelvas a llamar a esta herramienta: el resultado aparece en la tarjeta y se "
                 f"puede ver con listar_borradores. La confirmación vence en {int(flujo.VIGENCIA_PENDIENTE.total_seconds() // 60)} minutos."))],
-            structured_content={"borrador_id": borrador_id, "numero": em.numero, "resumen": em.resumen, "token": token})
+            structured_content={"confirmacion": "tarjeta", "borrador_id": borrador_id, "numero": em.numero})
     confirmar = {"elicitation": confirmacion.por_elicitation(ctx), "permiso": confirmacion.por_permiso,
                  "dialogo": confirmacion.por_dialogo}[forma]
     return _resultado(await flujo.emitir_borrador(datos, borrador_id, confirmar, esperado))
@@ -147,7 +151,24 @@ async def confirmar_emision(borrador_id: str, token: str, numero: str) -> CallTo
     return _resultado(await flujo.confirmar_pendiente(datos, borrador_id, token, numero))
 
 
-mcp = MCPServer("facturador-afip", instructions=INSTRUCCIONES, extensions=[apps])
+@apps.tool(resource_uri=TARJETA, visibility=["app"], annotations=LOCAL)
+@_errores_como_herramienta
+async def estado_confirmacion(borrador_id: str) -> CallToolResult:
+    """Solo para la tarjeta: si la confirmación sigue pendiente (con el resumen y un token para esta apertura), o si
+    se canceló, venció o ya se emitió."""
+    return _resultado(flujo.abrir_pendiente(datos, borrador_id))
+
+
+@apps.tool(resource_uri=TARJETA, visibility=["app"],
+           annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+                                       openWorldHint=False))
+@_errores_como_herramienta
+async def cancelar_emision(borrador_id: str, token: str) -> CallToolResult:
+    """Solo para la tarjeta: cancela la confirmación pendiente. No toca ARCA."""
+    return _resultado(flujo.cancelar_pendiente(datos, borrador_id, token))
+
+
+mcp = MCPServer("facturador-afip", instructions=INSTRUCCIONES, extensions=[apps], version=version("facturador-afip-mcp"))
 
 
 @mcp.tool(annotations=LOCAL)
@@ -308,8 +329,11 @@ async def preparar_emision(borrador_id: str) -> dict:
 async def listar_borradores() -> list[dict]:
     """Borradores validados en homologación y su estado: validado, emitiendo o emitido."""
     return [{"borrador_id": b["id"], "estado": b["estado"], "creado": b["creado"],
-             "homologacion": b["homologacion"].get("resumen", {}).get("titulo"),
-             "emision": (b.get("emision") or {}).get("comprobante")} for b in datos.listar_borradores()]
+             "validado_en_homologacion_como": b["homologacion"].get("resumen", {}).get("titulo"),
+             "emision": ({"comprobante": b["emision"].get("comprobante"), "entorno": b["emision"].get("entorno"),
+                          "cae": b["emision"].get("cae")} if b.get("emision") else None),
+             "confirmacion_pendiente_en_tarjeta": bool(b.get("pendiente"))}
+            for b in datos.listar_borradores()]
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
