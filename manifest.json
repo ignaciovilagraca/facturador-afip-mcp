@@ -1,0 +1,117 @@
+{
+  "manifest_version": "0.4",
+  "name": "facturador-afip-mcp",
+  "display_name": "Facturador ARCA",
+  "version": "0.1.0",
+  "description": "Prepará, validá y emití facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E.",
+  "long_description": "Emite comprobantes electrónicos de ARCA desde Claude. Cada factura se valida primero en homologación (sin valor fiscal). Para emitirla en producción, una persona confirma en una tarjeta dentro del chat tipeando el número de comprobante: el modelo no ve ese formulario y no puede confirmar por su cuenta. La clave privada y el certificado se leen de tu carpeta de datos y nunca pasan por el modelo.\n\nAntes de usarlo necesitás el alta en ARCA (certificados, autorizaciones y punto de venta). La herramienta estado_configuracion muestra qué falta.",
+  "author": {
+    "name": "Ignacio Vila Graca",
+    "url": "https://github.com/ignaciovilagraca"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ignaciovilagraca/facturador-afip-mcp"
+  },
+  "homepage": "https://github.com/ignaciovilagraca/facturador-afip-mcp",
+  "documentation": "https://github.com/ignaciovilagraca/facturador-afip-mcp#readme",
+  "support": "https://github.com/ignaciovilagraca/facturador-afip-mcp/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/facturador_afip_mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "--frozen",
+        "facturador-afip-mcp"
+      ],
+      "env": {
+        "FACTURADOR_AFIP_DIR": "${user_config.carpeta_datos}"
+      }
+    }
+  },
+  "user_config": {
+    "carpeta_datos": {
+      "type": "directory",
+      "title": "Carpeta de datos",
+      "description": "Donde están .env (CUIT), certs/ (clave y certificados de ARCA), perfil.json y facturas/. Si usás facturador-afip, elegí esa carpeta.",
+      "required": true,
+      "default": "${HOME}/.facturador-afip"
+    }
+  },
+  "tools": [
+    {
+      "name": "estado_configuracion",
+      "description": "Muestra qué falta configurar: CUIT, certificados, perfil y forma de confirmar"
+    },
+    {
+      "name": "ver_perfil",
+      "description": "Preferencias: puntos de venta, cliente por defecto, formato y fechas"
+    },
+    {
+      "name": "probar_conexion",
+      "description": "Prueba de solo lectura contra ARCA"
+    },
+    {
+      "name": "ultimo_comprobante",
+      "description": "Último número autorizado por ARCA"
+    },
+    {
+      "name": "buscar_codigo",
+      "description": "Códigos de país, CUIT genérico por país y monedas"
+    },
+    {
+      "name": "listar_comprobantes",
+      "description": "Comprobantes guardados"
+    },
+    {
+      "name": "ver_comprobante",
+      "description": "Datos completos de un comprobante guardado"
+    },
+    {
+      "name": "generar_pdf",
+      "description": "Regenera el PDF de un comprobante guardado"
+    },
+    {
+      "name": "validar_en_homologacion",
+      "description": "Valida la factura en homologación (sin valor fiscal) y crea el borrador"
+    },
+    {
+      "name": "preparar_emision",
+      "description": "Muestra el número, el receptor y el total reales de producción, sin emitir"
+    },
+    {
+      "name": "listar_borradores",
+      "description": "Borradores y su estado"
+    },
+    {
+      "name": "descartar_borrador",
+      "description": "Borra un borrador que no se va a emitir"
+    },
+    {
+      "name": "emitir_en_produccion",
+      "description": "Emite el borrador en producción, con confirmación de una persona"
+    }
+  ],
+  "keywords": [
+    "arca",
+    "afip",
+    "factura electrónica",
+    "argentina",
+    "facturación",
+    "cae"
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32"
+    ],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  }
+}

@@ -6,9 +6,12 @@ import sys
 from typing import Any, Literal
 
 import anyio.to_thread
+from importlib import resources
+
+from mcp.server.apps import Apps
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from . import confirmacion, emision, flujo
 from .arca import (ErrorArca, punto_de_venta_activo, punto_de_venta_activo_fe, puntos_de_venta, puntos_de_venta_fe,
@@ -30,10 +33,14 @@ versión completa de nuevo.
 3. Con el OK, llamá a validar_en_homologacion. No tiene valor fiscal; aclaráselo al usuario al contarle el resultado.
 4. Preguntale expresamente si la emite en producción. Confirmar los datos NO es aprobar la emisión: hace falta un \
 "emitila" o equivalente para ESA factura. Cada factura necesita su propia aprobación, y otra vez si cambió algún dato.
-5. Solo con esa aprobación, llamá a emitir_en_produccion con el borrador_id. El servidor le muestra a la persona un \
-resumen con los datos reales de producción y le pide tipear el número de comprobante. Vos no podés ni debés \
-responder esa confirmación. Si la persona cancela, no reintentes por tu cuenta.
-6. Contale el número, el CAE, el vencimiento del CAE y dónde quedó el PDF. Si hay observaciones, mostráselas: \
+5. Llamá a preparar_emision: devuelve el número de comprobante, el receptor, el total y la cotización reales de \
+producción. Mostráselos al usuario y pedile la aprobación con esos datos.
+6. Solo con esa aprobación, llamá a emitir_en_produccion con borrador_id, numero, receptor y total exactamente como \
+los devolvió preparar_emision. Según el cliente, la persona confirma en una tarjeta dentro del chat (tipeando el \
+número), en un formulario, en el diálogo de permiso o en un diálogo del sistema. Vos no podés ni debés responder esa \
+confirmación. Si la respuesta dice que falta la confirmación en la tarjeta, no reintentes: esperá a que la persona \
+confirme y después revisá el resultado con listar_borradores. Si la persona cancela, no reintentes por tu cuenta.
+7. Contale el número, el CAE, el vencimiento del CAE y dónde quedó el PDF. Si hay observaciones, mostráselas: \
 algunas obligan a anular la factura con una nota de crédito.
 Si el usuario no aprueba la emisión, descartá el borrador con descartar_borrador.
 
@@ -74,7 +81,10 @@ su clave privada.
 
 log = logging.getLogger("facturador_afip_mcp")
 datos = Datos.desde_entorno()
-mcp = MCPServer("facturador-afip", instructions=INSTRUCCIONES)
+TARJETA = "ui://facturador-afip/confirmar-emision.html"
+apps = Apps()
+apps.add_html_resource(TARJETA, (resources.files("facturador_afip_mcp") / "tarjeta.html").read_text(),
+                       name="Confirmar emisión", prefers_border=False)
 
 LECTURA = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 LOCAL = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
@@ -95,6 +105,51 @@ def _errores_como_herramienta(funcion):
     return envuelta
 
 
+def _resultado(datos_resultado: dict, texto: str | None = None) -> CallToolResult:
+    return CallToolResult(content=[TextContent(type="text", text=texto or json.dumps(datos_resultado, ensure_ascii=False,
+                                                                                     indent=2))],
+                          structured_content=datos_resultado)
+
+
+@apps.tool(resource_uri=TARJETA, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
+                                                              idempotentHint=False, openWorldHint=True))
+@_errores_como_herramienta
+async def emitir_en_produccion(borrador_id: str, numero: str, receptor: str, total: str, ctx: Context) -> CallToolResult:
+    """EMITE UN COMPROBANTE FISCAL REAL en ARCA producción. No se puede deshacer: solo se anula con una nota de
+    crédito. Llamala únicamente si el usuario aprobó de forma expresa la emisión de ESTE borrador en este momento,
+    con numero, receptor y total exactamente como los devolvió preparar_emision: si no coinciden con los reales,
+    no se emite. Antes de enviar, una persona confirma (tarjeta en el chat, formulario, permiso o diálogo del
+    sistema); si no confirma, no se emite nada."""
+    forma = confirmacion.elegir(datos.env.get("FACTURADOR_CONFIRMACION"), ctx)
+    esperado = {"numero": numero, "receptor": receptor, "total": total}
+    if forma == "apps":
+        em = await flujo.preparar_emision(datos, borrador_id)
+        flujo.verificar_esperado(em, **esperado)
+        token = flujo.crear_pendiente(datos, em)
+        # El token va solo en structuredContent (para la tarjeta), no en el texto que lee el modelo
+        return CallToolResult(
+            content=[TextContent(type="text", text=(
+                f"Todavía no se emitió nada. Falta que la persona confirme en la tarjeta: tiene que escribir {em.numero} "
+                "y apretar Emitir. No vuelvas a llamar a esta herramienta: el resultado aparece en la tarjeta y se "
+                f"puede ver con listar_borradores. La confirmación vence en {int(flujo.VIGENCIA_PENDIENTE.total_seconds() // 60)} minutos."))],
+            structured_content={"borrador_id": borrador_id, "numero": em.numero, "resumen": em.resumen, "token": token})
+    confirmar = {"elicitation": confirmacion.por_elicitation(ctx), "permiso": confirmacion.por_permiso,
+                 "dialogo": confirmacion.por_dialogo}[forma]
+    return _resultado(await flujo.emitir_borrador(datos, borrador_id, confirmar, esperado))
+
+
+@apps.tool(resource_uri=TARJETA, visibility=["app"],
+           annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False,
+                                       openWorldHint=True))
+@_errores_como_herramienta
+async def confirmar_emision(borrador_id: str, token: str, numero: str) -> CallToolResult:
+    """Solo para la tarjeta de confirmación: emite el borrador con el token de un solo uso y el número tipeado."""
+    return _resultado(await flujo.confirmar_pendiente(datos, borrador_id, token, numero))
+
+
+mcp = MCPServer("facturador-afip", instructions=INSTRUCCIONES, extensions=[apps])
+
+
 @mcp.tool(annotations=LOCAL)
 @_errores_como_herramienta
 async def estado_configuracion(ctx: Context) -> dict:
@@ -102,13 +157,12 @@ async def estado_configuracion(ctx: Context) -> dict:
     pedir la confirmación de emisión. Usala primero si algo falla o si el usuario está configurando."""
     env = datos.env
     perfil = datos.perfil()
-    modo = env.get("FACTURADOR_CONFIRMACION", "auto")
+    orden = env.get("FACTURADOR_CONFIRMACION") or confirmacion.ORDEN_POR_DEFECTO
     try:
-        confirmacion.elegir(modo, ctx)
-        confirmar = "diálogo del sistema" if (modo != "elicitation" and confirmacion.dialogo_disponible()) \
-            else "elicitation del cliente"
+        confirmar = {"se_usa": confirmacion.elegir(orden, ctx)}
     except ErrorArca as e:
-        confirmar = f"no disponible: {e}"
+        confirmar = {"se_usa": None, "error": str(e)}
+    confirmar |= {"orden": orden, "disponibles_con_este_cliente": confirmacion.disponibles(ctx)}
     faltan = [c for c in ("AFIP_RAZON_SOCIAL", "AFIP_DOMICILIO_COMERCIAL", "AFIP_CONDICION_IVA",
                           "AFIP_INGRESOS_BRUTOS", "AFIP_INICIO_ACTIVIDADES") if not env.get(c)]
     return {
@@ -240,6 +294,15 @@ async def validar_en_homologacion(factura: dict[str, Any], punto_venta_homo: int
     return await flujo.validar_en_homologacion(datos, factura, punto_venta_homo)
 
 
+@mcp.tool(annotations=LECTURA)
+@_errores_como_herramienta
+async def preparar_emision(borrador_id: str) -> dict:
+    """Arma la emisión en producción de un borrador SIN emitir: devuelve el número de comprobante, el receptor, el
+    total y la cotización reales, para mostrárselos al usuario antes de pedirle la aprobación. Solo lee de ARCA."""
+    em = await flujo.preparar_emision(datos, borrador_id)
+    return {**em.para_confirmar(), "cotizacion": em.prep.resumen["cotizacion"], "resumen": em.resumen}
+
+
 @mcp.tool(annotations=LOCAL)
 @_errores_como_herramienta
 async def listar_borradores() -> list[dict]:
@@ -256,18 +319,6 @@ async def descartar_borrador(borrador_id: str) -> dict:
     """Borra un borrador que no se va a emitir. No afecta nada en ARCA."""
     b = datos.descartar_borrador(borrador_id)
     return {"descartado": b["id"], "estado": b["estado"]}
-
-
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False,
-                                      openWorldHint=True))
-@_errores_como_herramienta
-async def emitir_en_produccion(borrador_id: str, ctx: Context) -> dict:
-    """EMITE UN COMPROBANTE FISCAL REAL en ARCA producción. No se puede deshacer: solo se anula con una nota de
-    crédito. Llamala únicamente si el usuario aprobó de forma expresa la emisión de ESTE borrador en este
-    momento. Antes de enviar, el servidor le pide a la persona que confirme tipeando el número de comprobante;
-    si no confirma, no se emite nada."""
-    confirmar = confirmacion.elegir(datos.env.get("FACTURADOR_CONFIRMACION", "auto"), ctx)
-    return await flujo.emitir_borrador(datos, borrador_id, confirmar)
 
 
 def main():

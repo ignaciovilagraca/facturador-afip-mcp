@@ -23,15 +23,20 @@ Arma el PDF con el diseño de "Comprobantes en línea", lleva la numeración y g
 
 Una factura emitida en producción es un comprobante fiscal real: no se borra, solo se anula con una nota de crédito. Por eso emitir pasa por varias barreras, y las del servidor no dependen de lo que decida el modelo:
 
-1. **Primero homologación.** `emitir_en_produccion` no recibe datos, solo el id de un borrador que `validar_en_homologacion` ya emitió con éxito en homologación. Se compara un hash: producción emite exactamente la factura validada.
-2. **El permiso del cliente.** En Claude Code, `emitir_en_produccion` va en `ask` (ver [más abajo](#uso-con-claude-code)): cada llamada pide aprobación.
-3. **La confirmación de una persona.** Antes de enviar a ARCA, el servidor arma un resumen con los datos reales de producción (número, cotización, total) y pide **tipear el número de comprobante**. La confirmación no pasa por el modelo:
-   - **Diálogo del sistema** (macOS con `osascript`, Linux con `zenity`). Funciona con cualquier cliente.
-   - **Elicitation**: el formulario del cliente de MCP, en los clientes que lo soportan (Claude Code en la terminal).
+1. **Primero homologación.** Solo se emite un borrador que `validar_en_homologacion` ya emitió con éxito en homologación. Se compara un hash: producción emite exactamente la factura validada.
+2. **Los datos reales a la vista.** `preparar_emision` arma la emisión sin emitir y devuelve el número de comprobante, el receptor, el total y la cotización de producción. `emitir_en_produccion` recibe esos mismos datos y el servidor verifica que coincidan con los reales; si no, no emite. Así el diálogo de permiso del cliente muestra qué se va a emitir.
+3. **La confirmación de una persona.** Antes de enviar a ARCA, una persona confirma por la primera de estas vías que el cliente soporte (`FACTURADOR_CONFIRMACION`, en este orden por defecto):
+
+   | Vía | Dónde | Cómo |
+   |---|---|---|
+   | `apps` | Clientes con MCP Apps (Claude Desktop) | Una tarjeta dentro del chat con el resumen: hay que tipear el número de comprobante y apretar Emitir. El botón llama a `confirmar_emision`, una herramienta que el cliente no le muestra al modelo, con un token de un solo uso que vence a los 10 minutos y que no va en el texto que lee el modelo |
+   | `elicitation` | Clientes con elicitation (Claude Code en la terminal) | Un formulario del cliente: hay que tipear el número |
+   | `permiso` | Cualquier cliente | El diálogo de permiso del cliente, que muestra número, receptor y total. Solo sirve si `emitir_en_produccion` está en `ask`: el servidor no puede saber si aprobó una persona. Sacalo de la lista si no es tu caso |
+   | `dialogo` | macOS (`osascript`) y Linux (`zenity`) | Un diálogo del sistema, fuera del cliente: hay que tipear el número |
+
+   Como `permiso` siempre está disponible, con el orden por defecto el diálogo del sistema solo se usa si sacás `permiso` de la lista. `estado_configuracion` muestra qué vía se va a usar con el cliente conectado.
 4. **Una sola vez.** Un borrador emitido no se puede volver a emitir. Si la conexión se corta a mitad de la emisión, el próximo intento primero consulta a ARCA si el comprobante ya existe y solo reintenta si no.
 5. **Tope opcional** por comprobante, en pesos (`FACTURADOR_TOTAL_MAXIMO_ARS`).
-
-`FACTURADOR_CONFIRMACION` elige la forma de confirmar: `auto` (por defecto: el diálogo si está disponible y, si no, elicitation), `dialogo` o `elicitation`. Si no hay ninguna disponible, el servidor no emite y explica cómo hacerlo desde la terminal.
 
 ## Credenciales y carpeta de datos
 
@@ -87,7 +92,8 @@ Permisos recomendados en `~/.claude/settings.json`: lectura sin preguntar, y `as
       "mcp__facturador-afip__ver_comprobante",
       "mcp__facturador-afip__listar_borradores",
       "mcp__facturador-afip__generar_pdf",
-      "mcp__facturador-afip__validar_en_homologacion"
+      "mcp__facturador-afip__validar_en_homologacion",
+      "mcp__facturador-afip__preparar_emision"
     ],
     "ask": [
       "mcp__facturador-afip__emitir_en_produccion",
@@ -101,7 +107,11 @@ Nunca pongas `emitir_en_produccion` en `allow`.
 
 ## Uso con Claude Desktop
 
-En `claude_desktop_config.json`:
+Descargá `facturador-afip.mcpb` de la última [release](https://github.com/ignaciovilagraca/facturador-afip-mcp/releases) y abrilo con doble clic (o Configuración → Extensiones → Instalar extensión). Claude Desktop pide la carpeta de datos e instala las dependencias con uv.
+
+En Claude Desktop, cada emisión se confirma en una tarjeta dentro del chat (MCP Apps). Funciona en macOS y Windows.
+
+Sin el `.mcpb`, también se puede configurar a mano en `claude_desktop_config.json`:
 
 ```json
 {
@@ -113,8 +123,6 @@ En `claude_desktop_config.json`:
   }
 }
 ```
-
-Si Claude Desktop no encuentra el comando, usá la ruta completa (`which facturador-afip-mcp`). Claude Desktop no soporta elicitation, así que la confirmación usa el diálogo del sistema.
 
 ## Herramientas
 
@@ -128,10 +136,12 @@ Si Claude Desktop no encuentra el comando, usá la ruta completa (`which factura
 | `listar_comprobantes`, `ver_comprobante` | Comprobantes guardados | No |
 | `generar_pdf` | Regenera el PDF de un comprobante guardado | No (salvo JSON viejos de Factura E) |
 | `validar_en_homologacion` | Emite en homologación y crea el borrador | Homologación, sin valor fiscal |
+| `preparar_emision` | Número, receptor, total y cotización reales de producción, sin emitir | Solo lectura |
 | `listar_borradores`, `descartar_borrador` | Borradores y su estado | No |
 | `emitir_en_produccion` | Emite el borrador, con confirmación de una persona | **Producción** |
+| `confirmar_emision` | Solo para la tarjeta: el modelo no la ve | **Producción** |
 
-El servidor le pasa al modelo instrucciones con el flujo: juntar los datos, confirmarlos con el usuario, validar en homologación, pedir aprobación expresa y recién ahí emitir. El formato del JSON de cada tipo de comprobante está en esas instrucciones (`INSTRUCCIONES` en `server.py`) y en [`ejemplos/`](ejemplos).
+El servidor le pasa al modelo instrucciones con el flujo: juntar los datos, confirmarlos con el usuario, validar en homologación, preparar la emisión, pedir aprobación expresa con los datos reales y recién ahí emitir. El formato del JSON de cada tipo de comprobante está en esas instrucciones (`INSTRUCCIONES` en `server.py`) y en [`ejemplos/`](ejemplos).
 
 ## Comandos
 
@@ -152,7 +162,14 @@ git config core.hooksPath .githooks   # bloquea commits con claves, certificados
 uv run pytest
 ```
 
-Los tests usan un cliente MCP en memoria y ARCA simulada: no salen a la red. Para registrar la versión local en Claude Code:
+Los tests usan un cliente MCP en memoria y ARCA simulada: no salen a la red.
+
+Para armar la extensión de Claude Desktop (la versión de `manifest.json` tiene que coincidir con la de `pyproject.toml`):
+
+```bash
+npx @anthropic-ai/mcpb validate manifest.json
+npx @anthropic-ai/mcpb pack . dist/facturador-afip.mcpb
+``` Para registrar la versión local en Claude Code:
 
 ```bash
 claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.facturador-afip -- uv run --directory $PWD facturador-afip-mcp
@@ -161,5 +178,6 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
 ## Limitaciones
 
 - No hay notas de crédito de Factura E.
-- Elicitation funciona con clientes que negocian el protocolo con el handshake `initialize` (el caso de Claude Code hoy). Con un cliente que use solo el protocolo 2026-07-28, la elicitation falla antes de emitir, así que no se emite nada; el diálogo del sistema sí funciona.
+- Elicitation funciona con clientes que negocian el protocolo con el handshake `initialize` (el caso de Claude Code hoy). Con un cliente que use solo el protocolo 2026-07-28, la elicitation falla antes de emitir, así que no se emite nada.
+- La tarjeta depende de que el cliente cumpla la especificación de MCP Apps: que no le muestre `confirmar_emision` al modelo y que no le pase el `structuredContent` (donde va el token). Aun si no lo cumpliera, el modelo necesitaría el token de un solo uso y el número exacto.
 - El diálogo del sistema aparece en la computadora donde corre el servidor. Si le diste a Claude control de la pantalla (computer use), podría responderlo: no le des acceso a `osascript` ni a los diálogos del sistema.

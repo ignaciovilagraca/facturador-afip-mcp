@@ -2,20 +2,23 @@
 
 Reglas que este módulo hace cumplir, sin depender de lo que decida el modelo:
 - Producción solo emite un borrador ya validado en homologación, y exactamente esa factura (se compara el hash).
-- Antes de enviar a ARCA, una persona tiene que tipear el número de comprobante en una confirmación que
-  arma el servidor (no el modelo), con los datos reales de producción.
+- Antes de enviar a ARCA, una persona confirma con los datos reales de producción (ver confirmacion.py).
 - Un borrador se emite una sola vez. Si la emisión se corta a la mitad, antes de reintentar se consulta a ARCA
   si el comprobante ya existe.
 - Opcional: un tope por comprobante en pesos.
 """
+import hashlib
+import hmac
+import secrets
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import anyio.to_thread
 
 from . import emision
-from .arca import ErrorArca, ultimo_comprobante, ultimo_comprobante_fe
+from .arca import Auth, ErrorArca, ultimo_comprobante, ultimo_comprobante_fe
 from .datos import Datos, huella
 
 # Entorno de emisión real. Los tests lo cambian a "homo" para probar el flujo completo sin valor fiscal.
@@ -122,7 +125,25 @@ def _ahora():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador) -> dict:
+@dataclass
+class Emision:
+    """Una emisión en producción lista para confirmar: los datos reales que se van a enviar a ARCA."""
+    borrador: dict
+    prep: emision.Preparada
+    auth: Auth
+    numero: str   # PPPPP-NNNNNNNN
+    resumen: str
+
+    def para_confirmar(self) -> dict:
+        """Lo que la persona tiene que ver antes de aprobar: va en los argumentos de emitir_en_produccion,
+        así el diálogo de permiso del cliente lo muestra."""
+        r = self.prep.resumen
+        return {"borrador_id": self.borrador["id"], "numero": self.numero, "receptor": r["receptor"],
+                "total": f"{r['moneda']} {r['total']}"}
+
+
+async def preparar_emision(datos: Datos, borrador_id: str) -> Emision:
+    """Verifica el borrador y arma la emisión con los datos de producción (número, cotización). No emite."""
     env = ENTORNO_EMISION
     borrador = datos.leer_borrador(borrador_id)
     if borrador["estado"] == "emitido":
@@ -132,8 +153,7 @@ async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador
     if huella(factura) != borrador["huella"]:
         raise ErrorArca("La factura del borrador cambió después de validarla en homologación. Validala de nuevo.")
 
-    servicio = emision.servicio_de(factura)
-    auth = await _en_hilo(datos.login, env, servicio)
+    auth = await _en_hilo(datos.login, env, emision.servicio_de(factura))
     if borrador["estado"] == "emitiendo":
         await _reconciliar(datos, borrador, auth)
 
@@ -143,22 +163,35 @@ async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador
     if tope is not None and total_ars > tope:
         raise ErrorArca(f"El total equivale a ARS {total_ars:.2f}, más que el tope de ARS {tope} "
                         "(FACTURADOR_TOTAL_MAXIMO_ARS en .env). No se emitió nada.")
+    return Emision(borrador, prep, auth, f"{prep.punto_venta:05d}-{prep.numero:08d}",
+                   resumen_texto(prep, datos.emisor()))
 
-    numero = f"{prep.punto_venta:05d}-{prep.numero:08d}"
-    if not await confirmar(resumen_texto(prep, datos.emisor()), numero):
-        return {"emitida": False, "mensaje": "La persona no confirmó la emisión. No se emitió nada."}
 
-    # Entre la confirmación y el envío pudo pasar tiempo: se relee el borrador por si cambió
-    borrador = datos.leer_borrador(borrador_id)
+def verificar_esperado(em: Emision, numero: str, receptor: str, total: str):
+    """Los datos que aprobó la persona tienen que ser exactamente los que se van a emitir."""
+    real = em.para_confirmar()
+    diferencias = [f"{campo}: aprobado {valor!r}, real {real[campo]!r}"
+                   for campo, valor in (("numero", numero), ("receptor", receptor), ("total", total))
+                   if (valor or "").strip() != real[campo]]
+    if diferencias:
+        raise ErrorArca("Los datos aprobados no coinciden con los de producción (" + "; ".join(diferencias)
+                        + "). No se emitió nada. Volvé a llamar a preparar_emision y mostrale los datos al usuario.")
+
+
+async def enviar_emision(datos: Datos, em: Emision) -> dict:
+    factura, prep = em.borrador["factura"], em.prep
+    # Entre la preparación y el envío pudo pasar tiempo: se relee el borrador por si cambió
+    borrador = datos.leer_borrador(em.borrador["id"])
     if borrador["estado"] != "validado" or borrador["huella"] != huella(factura):
         raise ErrorArca("El borrador cambió mientras se esperaba la confirmación. No se emitió nada.")
     borrador["estado"] = "emitiendo"
-    borrador["emision"] = {"inicio": _ahora(), "servicio": servicio, "cbte_tipo": prep.cbte_tipo,
+    borrador["pendiente"] = None
+    borrador["emision"] = {"inicio": _ahora(), "servicio": prep.servicio, "cbte_tipo": prep.cbte_tipo,
                            "punto_venta": prep.punto_venta, "numero": prep.numero}
     datos.guardar_borrador(borrador)
 
     try:
-        salida = await _en_hilo(emision.enviar, prep, auth, datos.emisor())
+        salida = await _en_hilo(emision.enviar, prep, em.auth, datos.emisor())
     except emision.Rechazada as e:
         borrador["estado"] = "validado"
         borrador["emision"] = None
@@ -167,8 +200,8 @@ async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador
         raise
     except Exception as e:
         # No se sabe si ARCA la emitió: el borrador queda en "emitiendo" y el próximo intento lo verifica
-        raise ErrorArca(f"No se sabe si ARCA emitió {numero}: {e}. Volvé a llamar a emitir_en_produccion con el "
-                        "mismo borrador: primero consulta a ARCA si se emitió y solo reintenta si no.") from e
+        raise ErrorArca(f"No se sabe si ARCA emitió {em.numero}: {e}. Volvé a intentar con el mismo borrador: "
+                        "primero se consulta a ARCA si se emitió y solo se reintenta si no.") from e
 
     registro, pdf_archivo = await _en_hilo(datos.guardar_comprobante, salida, emision.nombre_registro(salida))
     resultado = _resultado(salida, registro, pdf_archivo)
@@ -181,3 +214,52 @@ async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador
         resultado["aviso"] = ("ARCA la aprobó CON OBSERVACIONES. Algunas indican que hay que anularla con una nota "
                               "de crédito: mostráselas al usuario.")
     return resultado
+
+
+async def emitir_borrador(datos: Datos, borrador_id: str, confirmar: Confirmador, esperado: dict | None = None) -> dict:
+    """Prepara, pide la confirmación de una persona y emite. `esperado`: numero, receptor y total aprobados."""
+    em = await preparar_emision(datos, borrador_id)
+    if esperado:
+        verificar_esperado(em, **esperado)
+    if not await confirmar(em.resumen, em.numero):
+        return {"emitida": False, "mensaje": "La persona no confirmó la emisión. No se emitió nada."}
+    return await enviar_emision(datos, em)
+
+
+# --- Confirmación en una tarjeta (MCP Apps) ---
+# emitir_en_produccion deja una confirmación pendiente con un token de un solo uso y el cliente muestra la tarjeta.
+# La persona tipea el número y la tarjeta llama a confirmar_emision, una herramienta que el cliente no le muestra
+# al modelo. El token va solo en structuredContent, que tampoco se agrega al contexto del modelo.
+
+VIGENCIA_PENDIENTE = timedelta(minutes=10)
+
+
+def crear_pendiente(datos: Datos, em: Emision) -> str:
+    token = secrets.token_urlsafe(24)
+    borrador = datos.leer_borrador(em.borrador["id"])
+    borrador["pendiente"] = {"token": hashlib.sha256(token.encode()).hexdigest(), "numero": em.numero,
+                             "expira": (datetime.now(timezone.utc) + VIGENCIA_PENDIENTE).isoformat(timespec="seconds")}
+    datos.guardar_borrador(borrador)
+    return token
+
+
+async def confirmar_pendiente(datos: Datos, borrador_id: str, token: str, numero: str) -> dict:
+    borrador = datos.leer_borrador(borrador_id)
+    pendiente = borrador.get("pendiente")
+    if not pendiente:
+        raise ErrorArca("No hay una confirmación pendiente para este borrador. No se emitió nada.")
+    if datetime.fromisoformat(pendiente["expira"]) < datetime.now(timezone.utc):
+        raise ErrorArca("La confirmación venció. Pedile a Claude que prepare la emisión de nuevo. No se emitió nada.")
+    if not hmac.compare_digest(pendiente["token"], hashlib.sha256((token or "").encode()).hexdigest()):
+        raise ErrorArca("Token de confirmación no válido. No se emitió nada.")
+    if (numero or "").strip() != pendiente["numero"]:
+        raise ErrorArca(f"El número tipeado no coincide con {pendiente['numero']}. No se emitió nada.")
+    # Un solo uso: se consume antes de enviar
+    borrador["pendiente"] = None
+    datos.guardar_borrador(borrador)
+
+    em = await preparar_emision(datos, borrador_id)
+    if em.numero != pendiente["numero"]:
+        raise ErrorArca(f"El próximo número en ARCA ahora es {em.numero}, no {pendiente['numero']}: alguien emitió "
+                        "otro comprobante en el medio. Prepará la emisión de nuevo. No se emitió nada.")
+    return await enviar_emision(datos, em)

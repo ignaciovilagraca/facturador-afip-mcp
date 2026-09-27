@@ -3,6 +3,7 @@ import json
 
 import pytest
 from mcp.client.client import Client
+from mcp.client.extension import ClientExtension
 from mcp.types import ElicitResult
 
 from facturador_afip_mcp import confirmacion, emision, flujo, server
@@ -89,6 +90,17 @@ async def llamar(client, herramienta, **args):
     return False, r.structured_content if r.structured_content is not None else json.loads(texto)
 
 
+async def para_emitir(client, borrador):
+    """preparar_emision y los argumentos de emitir_en_produccion tal cual los devuelve."""
+    error, r = await llamar(client, "preparar_emision", borrador_id=borrador)
+    assert not error, r
+    return {k: r[k] for k in ("borrador_id", "numero", "receptor", "total")}
+
+
+async def emitir(client, borrador):
+    return await llamar(client, "emitir_en_produccion", **await para_emitir(client, borrador))
+
+
 async def validar(client, factura=FACTURA_C):
     error, r = await llamar(client, "validar_en_homologacion", factura=factura)
     assert not error, r
@@ -111,7 +123,7 @@ async def test_emitir_con_confirmacion(datos, arca):
     async with Client(server.mcp, mode="legacy", elicitation_callback=cb) as c:
         borrador = (await validar(c))["borrador_id"]
         arca.ultimos[("prod", 4, 11)] = 41
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
         assert not error, r
         assert r["emitida"] and r["comprobante"] == "Factura C 00004-00000042"
         assert arca.envios[-1] == ("prod", 4, 42)
@@ -121,7 +133,7 @@ async def test_emitir_con_confirmacion(datos, arca):
         assert (datos.facturas / "prod" / "C-00004-00000042.json").exists()
         assert datos.leer_borrador(borrador)["estado"] == "emitido"
 
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await llamar(c, "preparar_emision", borrador_id=borrador)
         assert error and "ya se emitió" in r
     assert len([e for e in arca.envios if e[0] == "prod"]) == 1
 
@@ -129,7 +141,7 @@ async def test_emitir_con_confirmacion(datos, arca):
 async def test_sin_elicitation_no_emite(datos, arca):
     async with Client(server.mcp, mode="legacy") as c:
         borrador = (await validar(c))["borrador_id"]
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
     assert error and "No se emitió nada" in r
     assert all(e[0] == "homo" for e in arca.envios)
 
@@ -139,7 +151,7 @@ async def test_sin_elicitation_no_emite(datos, arca):
 async def test_confirmacion_incorrecta_no_emite(datos, arca, cb):
     async with Client(server.mcp, mode="legacy", elicitation_callback=cb) as c:
         borrador = (await validar(c))["borrador_id"]
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
     assert not error and r["emitida"] is False
     assert all(e[0] == "homo" for e in arca.envios)
     assert datos.leer_borrador(borrador)["estado"] == "validado"
@@ -152,7 +164,7 @@ async def test_borrador_modificado_no_emite(datos, arca):
         b = datos.leer_borrador(borrador)
         b["factura"]["items"][0]["precio"] = 999999
         datos.guardar_borrador(b)
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await llamar(c, "preparar_emision", borrador_id=borrador)
     assert error and "cambió" in r
     assert cb.mensajes == []
 
@@ -162,7 +174,7 @@ async def test_tope_en_pesos(datos, arca):
     cb = responder()
     async with Client(server.mcp, mode="legacy", elicitation_callback=cb) as c:
         borrador = (await validar(c))["borrador_id"]
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await llamar(c, "preparar_emision", borrador_id=borrador)
     assert error and "tope" in r
     assert cb.mensajes == []
 
@@ -172,7 +184,7 @@ async def test_corte_de_red_y_reintento(datos, arca):
     async with Client(server.mcp, mode="legacy", elicitation_callback=cb) as c:
         borrador = (await validar(c))["borrador_id"]
         arca.falla_red = True
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
         assert error and "No se sabe si ARCA emitió" in r
         assert datos.leer_borrador(borrador)["estado"] == "emitiendo"
         error, r = await llamar(c, "descartar_borrador", borrador_id=borrador)
@@ -180,7 +192,7 @@ async def test_corte_de_red_y_reintento(datos, arca):
 
         # ARCA no lo tiene: se puede reintentar
         arca.falla_red = False
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
         assert not error and r["emitida"], r
 
 
@@ -194,10 +206,10 @@ async def test_corte_de_red_pero_arca_lo_emitio(datos, arca, monkeypatch):
             enviar_real(prep, auth, emisor)
             raise TimeoutError("se cortó después de emitir")
         monkeypatch.setattr(emision, "enviar", emite_y_se_corta)
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
         assert error
         envios = len(arca.envios)
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await llamar(c, "preparar_emision", borrador_id=borrador)
     assert error and "ARCA ya tiene el comprobante" in r
     assert len(arca.envios) == envios
 
@@ -222,7 +234,7 @@ async def test_dialogo_del_sistema(datos, arca, monkeypatch):
     monkeypatch.setattr(confirmacion, "_dialogo_zenity", dialogo)
     async with Client(server.mcp, mode="legacy") as c:  # sin elicitation
         borrador = (await validar(c))["borrador_id"]
-        error, r = await llamar(c, "emitir_en_produccion", borrador_id=borrador)
+        error, r = await emitir(c, borrador)
     assert not error and r["emitida"], r
     assert "00004-00000001" in vistos[0]
 
@@ -244,3 +256,90 @@ def test_ids_y_archivos_no_escapan_de_la_carpeta(tmp_path):
             d.leer_borrador(malo)
     with pytest.raises(ErrorArca):
         d.registro("prod", "../.env")
+
+
+class ClienteConApps(ClientExtension):
+    """Un cliente que declara MCP Apps, como Claude Desktop."""
+    identifier = "io.modelcontextprotocol/ui"
+
+    def settings(self):
+        return {"mimeTypes": ["text/html;profile=mcp-app"]}
+
+
+def orden(datos, valor):
+    env = datos.raiz / ".env"
+    env.write_text(env.read_text().replace("FACTURADOR_CONFIRMACION=elicitation", f"FACTURADOR_CONFIRMACION={valor}"))
+
+
+async def test_tarjeta_mcp_apps(datos, arca):
+    orden(datos, "apps,elicitation,permiso,dialogo")
+    cb = responder()
+    async with Client(server.mcp, mode="legacy", elicitation_callback=cb, extensions=[ClienteConApps()]) as c:
+        # El modelo no ve confirmar_emision
+        herramientas = {t.name: t for t in (await c.list_tools()).tools}
+        assert herramientas["confirmar_emision"].meta["ui"]["visibility"] == ["app"]
+        assert herramientas["emitir_en_produccion"].meta["ui"]["resourceUri"].startswith("ui://")
+
+        borrador = (await validar(c))["borrador_id"]
+        r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        assert not r.is_error
+        token = r.structured_content["token"]
+        assert token not in r.content[0].text  # el modelo lee el texto, no el token
+        assert "Todavía no se emitió nada" in r.content[0].text
+        assert cb.mensajes == [] and all(e[0] == "homo" for e in arca.envios)
+
+        # Token o número equivocados: no emite
+        for args in ({"token": "otro", "numero": "00004-00000001"}, {"token": token, "numero": "00004-00000002"}):
+            error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, **args)
+            assert error and "No se emitió nada" in r
+
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
+        assert not error and r["emitida"], r
+        assert arca.envios[-1] == ("prod", 4, 1)
+
+        # Un solo uso
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
+        assert error
+    assert len([e for e in arca.envios if e[0] == "prod"]) == 1
+
+
+async def test_tarjeta_vencida_o_numero_cambiado(datos, arca, monkeypatch):
+    orden(datos, "apps")
+    async with Client(server.mcp, mode="legacy", extensions=[ClienteConApps()]) as c:
+        borrador = (await validar(c))["borrador_id"]
+        r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        token = r.structured_content["token"]
+        arca.ultimos[("prod", 4, 11)] = 1  # alguien emitió otro comprobante en el medio
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000001")
+        assert error and "alguien emitió otro" in r
+
+        r = await c.call_tool("emitir_en_produccion", await para_emitir(c, borrador))
+        token = r.structured_content["token"]
+        b = datos.leer_borrador(borrador)
+        b["pendiente"]["expira"] = "2000-01-01T00:00:00+00:00"
+        datos.guardar_borrador(b)
+        error, r = await llamar(c, "confirmar_emision", borrador_id=borrador, token=token, numero="00004-00000002")
+        assert error and "venció" in r
+    assert all(e[0] == "homo" for e in arca.envios)
+
+
+async def test_permiso_emite_con_los_datos_aprobados(datos, arca):
+    orden(datos, "apps,elicitation,permiso,dialogo")
+    async with Client(server.mcp, mode="legacy") as c:  # sin Apps ni elicitation
+        borrador = (await validar(c))["borrador_id"]
+        error, estado = await llamar(c, "estado_configuracion")
+        assert estado["confirmacion_de_emision"]["se_usa"] == "permiso"
+        error, r = await emitir(c, borrador)
+    assert not error and r["emitida"], r
+
+
+@pytest.mark.parametrize("campo,valor", [("numero", "00004-00000009"), ("total", "PES 1.00"),
+                                         ("receptor", "Otro (1)")])
+async def test_datos_aprobados_distintos_no_emite(datos, arca, campo, valor):
+    orden(datos, "permiso")
+    async with Client(server.mcp, mode="legacy") as c:
+        borrador = (await validar(c))["borrador_id"]
+        args = await para_emitir(c, borrador)
+        error, r = await llamar(c, "emitir_en_produccion", **{**args, campo: valor})
+    assert error and "no coinciden" in r
+    assert all(e[0] == "homo" for e in arca.envios)

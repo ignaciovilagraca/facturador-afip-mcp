@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.githooks/
+.github/
+tests/
+dist/
+*.mcpb
+.DS_Store

@@ -1,20 +1,23 @@
-"""Cómo se le pide a una persona que confirme la emisión.
+"""Cómo se le pide a una persona que confirme la emisión en producción.
 
-La confirmación la arma el servidor con los datos reales de producción y la responde una persona, no el
-modelo: hay que tipear el número de comprobante que se va a emitir. Hay tres formas:
+Formas, en el orden en que se prueban por defecto (FACTURADOR_CONFIRMACION, lista separada por comas):
 
-- "dialogo": un diálogo nativo del sistema operativo (macOS con osascript; Linux con zenity). Aparece fuera
-  del cliente de MCP, así que funciona con cualquier cliente, incluidos los que no soportan elicitation.
-- "elicitation": el formulario del propio cliente de MCP (por ejemplo, Claude Code en la terminal).
-- "terminal": para el comando `facturador-afip-mcp emitir`.
+- "apps": una tarjeta dentro del chat (MCP Apps), en los clientes que la soportan (Claude Desktop). La persona
+  tipea el número de comprobante y aprieta Emitir; el botón llama a una herramienta que el modelo no ve.
+- "elicitation": el formulario del cliente de MCP (Claude Code en la terminal). Hay que tipear el número.
+- "permiso": el diálogo de permiso del cliente. emitir_en_produccion recibe número, receptor y total, así el
+  diálogo los muestra, y el servidor verifica que sean los reales. Solo es una confirmación si la herramienta
+  está en "ask": el servidor no puede saber si la aprobó una persona.
+- "dialogo": un diálogo nativo del sistema (macOS con osascript; Linux con zenity), fuera del cliente.
 
-Con FACTURADOR_CONFIRMACION=auto (por defecto) se usa el diálogo si está disponible y, si no, elicitation.
+El comando `facturador-afip-mcp emitir` confirma en la terminal.
 """
 import platform
 import shutil
 import subprocess
 
 import anyio.to_thread
+from mcp.server.apps import client_supports_apps
 from pydantic import BaseModel, Field
 
 from .arca import ErrorArca
@@ -84,21 +87,41 @@ def por_elicitation(ctx):
     return confirmar
 
 
+async def por_permiso(resumen: str, numero: str) -> bool:
+    """La confirmación fue el diálogo de permiso del cliente, que mostró número, receptor y total."""
+    return True
+
+
 async def por_terminal(resumen: str, numero: str) -> bool:
     print(_pedido(resumen, numero))
     return _coincide(await anyio.to_thread.run_sync(lambda: input("> ")), numero)
 
 
-def elegir(modo: str, ctx):
-    """Devuelve el confirmador según FACTURADOR_CONFIRMACION, o un error que explica qué hacer."""
-    modo = (modo or "auto").lower()
-    if modo not in ("auto", "dialogo", "elicitation"):
-        raise ErrorArca(f"FACTURADOR_CONFIRMACION no válido: {modo} (auto, dialogo o elicitation)")
-    if modo in ("auto", "dialogo") and dialogo_disponible():
-        return por_dialogo
-    if modo in ("auto", "elicitation") and cliente_soporta_elicitation(ctx):
-        return por_elicitation(ctx)
+ORDEN_POR_DEFECTO = "apps,elicitation,permiso,dialogo"
+FORMAS = ("apps", "elicitation", "permiso", "dialogo")
+
+
+def cliente_soporta_apps(ctx) -> bool:
+    return client_supports_apps(ctx)
+
+
+def disponibles(ctx) -> dict:
+    return {"apps": cliente_soporta_apps(ctx), "elicitation": cliente_soporta_elicitation(ctx), "permiso": True,
+            "dialogo": dialogo_disponible()}
+
+
+def elegir(orden: str | None, ctx) -> str:
+    """La primera forma de confirmar de la lista que esté disponible con este cliente."""
+    formas = [f.strip().lower() for f in (orden or ORDEN_POR_DEFECTO).split(",") if f.strip()]
+    if "auto" in formas:  # compatibilidad con la versión anterior
+        formas = ORDEN_POR_DEFECTO.split(",")
+    invalidas = [f for f in formas if f not in FORMAS]
+    if invalidas:
+        raise ErrorArca(f"FACTURADOR_CONFIRMACION no válido: {', '.join(invalidas)} (válidas: {', '.join(FORMAS)})")
+    hay = disponibles(ctx)
+    for forma in formas:
+        if hay[forma]:
+            return forma
     raise ErrorArca(
-        "No hay forma de pedirle confirmación a una persona: este cliente de MCP no soporta elicitation y no hay "
-        "diálogo del sistema disponible. No se emitió nada. Para emitir, que el usuario corra en su terminal: "
-        "facturador-afip-mcp emitir <borrador_id>")
+        f"No hay forma de pedirle confirmación a una persona con este cliente (FACTURADOR_CONFIRMACION={orden}). "
+        "No se emitió nada. Para emitir, que el usuario corra en su terminal: facturador-afip-mcp emitir <borrador_id>")

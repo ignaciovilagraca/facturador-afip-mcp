@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emitir en producción</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fondo: var(--color-background-primary, light-dark(#ffffff, #1f1f1e));
+    --fondo-2: var(--color-background-secondary, light-dark(#f5f4ef, #2a2a28));
+    --texto: var(--color-text-primary, light-dark(#1f1f1e, #f5f4ef));
+    --texto-2: var(--color-text-secondary, light-dark(#5e5d59, #b8b5a9));
+    --borde: var(--color-border-primary, light-dark(#dedcd1, #3d3d3a));
+    --peligro: var(--color-text-danger, light-dark(#b42318, #f97066));
+    --fondo-peligro: var(--color-background-danger, light-dark(#fef3f2, #3b1a17));
+    --exito: var(--color-text-success, light-dark(#067647, #47cd89));
+    --fuente: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 14px/1.45 var(--fuente); color: var(--texto); }
+  .tarjeta { background: var(--fondo); border: 1px solid var(--borde); border-radius: 12px; padding: 16px; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: var(--texto-2); margin: 0 0 12px; font-size: 13px; }
+  pre { font: 12.5px/1.5 var(--mono); background: var(--fondo-2); border-radius: 8px; padding: 12px;
+        margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .aviso { background: var(--fondo-peligro); color: var(--peligro); border-radius: 8px; padding: 10px 12px;
+           margin: 0 0 12px; font-size: 13px; }
+  label { display: block; font-size: 13px; margin: 0 0 6px; }
+  code { font-family: var(--mono); font-weight: 600; }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; }
+  input { flex: 1 1 180px; min-width: 0; font: 15px var(--mono); padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); }
+  button { font: 600 14px var(--fuente); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--borde);
+           background: var(--fondo-2); color: var(--texto); cursor: pointer; }
+  button.emitir { background: var(--peligro); border-color: var(--peligro); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .estado { margin: 10px 0 0; font-size: 13px; color: var(--texto-2); }
+  .ok { color: var(--exito); }
+  .error { color: var(--peligro); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="tarjeta">
+  <div id="cargando" class="sub">Preparando la emisión…</div>
+
+  <div id="confirmar" hidden>
+    <h1>Emitir en producción</h1>
+    <p class="sub">Revisá los datos. Solo vos podés confirmar: Claude no ve este formulario.</p>
+    <pre id="resumen"></pre>
+    <p class="aviso">Esto emite un comprobante fiscal real ante ARCA. No se puede borrar: solo se anula con una nota
+      de crédito.</p>
+    <label for="numero">Para emitirlo, escribí el número de comprobante <code id="numero-esperado"></code></label>
+    <div class="fila">
+      <input id="numero" autocomplete="off" spellcheck="false" inputmode="numeric">
+      <button id="emitir" class="emitir" disabled>Emitir</button>
+      <button id="cancelar">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="mensaje" hidden></div>
+  <p id="estado" class="estado" hidden></p>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const pendientes = new Map();
+  let siguiente = 0;
+  let datos = null;
+
+  function pedir(method, params) {
+    const id = ++siguiente;
+    window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    return new Promise((ok, mal) => pendientes.set(id, { ok, mal }));
+  }
+
+  function avisar(method, params) {
+    window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+  }
+
+  function texto(resultado) {
+    return (resultado?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+  }
+
+  function estado(mensaje, clase) {
+    const e = $("estado");
+    e.hidden = !mensaje;
+    e.textContent = mensaje || "";
+    e.className = "estado " + (clase || "");
+  }
+
+  function mostrarMensaje(titulo, cuerpo, clase) {
+    $("cargando").hidden = true;
+    $("confirmar").hidden = true;
+    const m = $("mensaje");
+    m.hidden = false;
+    m.replaceChildren();
+    const h = document.createElement("h1");
+    h.textContent = titulo;
+    if (clase) h.className = clase;
+    const p = document.createElement("pre");
+    p.textContent = cuerpo;
+    m.append(h, p);
+  }
+
+  function aplicarTema(ctx) {
+    if (!ctx) return;
+    if (ctx.theme) document.documentElement.style.colorScheme = ctx.theme;
+    const variables = ctx.styles?.variables || {};
+    for (const [clave, valor] of Object.entries(variables)) {
+      if (valor) document.documentElement.style.setProperty(clave, valor);
+    }
+  }
+
+  function mostrarResultado(resultado) {
+    $("cargando").hidden = true;
+    const sc = resultado?.structuredContent;
+    if (resultado?.isError) {
+      mostrarMensaje("No se emitió nada", texto(resultado), "error");
+    } else if (sc?.token) {
+      datos = sc;
+      $("resumen").textContent = sc.resumen;
+      $("numero-esperado").textContent = sc.numero;
+      $("confirmar").hidden = false;
+      $("numero").focus();
+    } else {
+      // La confirmación se hizo por otra vía (elicitation, permiso o diálogo): solo se muestra el resultado
+      mostrarMensaje(sc?.emitida ? "Emitida" : "Emisión", texto(resultado), sc?.emitida ? "ok" : "");
+    }
+  }
+
+  window.addEventListener("message", (evento) => {
+    if (evento.source !== window.parent) return;
+    const m = evento.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && !m.method && pendientes.has(m.id)) {
+      const p = pendientes.get(m.id);
+      pendientes.delete(m.id);
+      m.error ? p.mal(new Error(m.error.message || "Error")) : p.ok(m.result);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-result") mostrarResultado(m.params);
+    if (m.method === "ui/notifications/tool-cancelled") mostrarMensaje("Cancelado", "No se emitió nada.");
+    if (m.method === "ui/notifications/host-context-changed") aplicarTema(m.params);
+  });
+
+  $("numero").addEventListener("input", () => {
+    $("emitir").disabled = $("numero").value.trim() !== datos?.numero;
+  });
+
+  $("cancelar").addEventListener("click", () => {
+    mostrarMensaje("Cancelado", "No se emitió nada. La confirmación vence sola en 10 minutos.");
+    pedir("ui/update-model-context", {
+      content: [{ type: "text", text: `El usuario canceló la emisión de ${datos?.numero} desde la tarjeta. No se emitió nada.` }],
+    }).catch(() => {});
+  });
+
+  $("emitir").addEventListener("click", async () => {
+    $("emitir").disabled = true;
+    $("cancelar").disabled = true;
+    $("numero").disabled = true;
+    estado("Emitiendo en ARCA…");
+    try {
+      const r = await pedir("tools/call", {
+        name: "confirmar_emision",
+        arguments: { borrador_id: datos.borrador_id, token: datos.token, numero: $("numero").value.trim() },
+      });
+      const cuerpo = texto(r);
+      if (r?.isError) {
+        mostrarMensaje("No se emitió", cuerpo, "error");
+      } else {
+        const sc = r?.structuredContent || {};
+        mostrarMensaje(sc.comprobante ? `Emitida: ${sc.comprobante}` : "Emitida", cuerpo, "ok");
+      }
+      pedir("ui/update-model-context", { content: [{ type: "text", text: "Resultado de la emisión:\n" + cuerpo }] })
+        .catch(() => {});
+    } catch (e) {
+      mostrarMensaje("Error", String(e.message || e) + "\n\nNo se sabe si llegó a ARCA: pedile a Claude que lo "
+        + "verifique antes de reintentar.", "error");
+    }
+    estado("");
+  });
+
+  new ResizeObserver(() => {
+    const r = document.documentElement.getBoundingClientRect();
+    avisar("ui/notifications/size-changed", { width: Math.ceil(r.width), height: Math.ceil(r.height) });
+  }).observe(document.documentElement);
+
+  pedir("ui/initialize", {
+    appInfo: { name: "facturador-afip", version: "0.1.0" },
+    appCapabilities: {},
+    protocolVersion: "2026-01-26",
+  }).then((r) => {
+    aplicarTema(r?.hostContext);
+    avisar("ui/notifications/initialized", {});
+  }).catch(() => avisar("ui/notifications/initialized", {}));
+</script>
+</body>
+</html>
