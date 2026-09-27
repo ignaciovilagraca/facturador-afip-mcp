@@ -115,7 +115,7 @@ def _resultado(datos_resultado: dict, texto: str | None = None) -> CallToolResul
                           structured_content=datos_resultado)
 
 
-@apps.tool(resource_uri=TARJETA, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
+@apps.tool(title="Emitir en producción", resource_uri=TARJETA, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
                                                               idempotentHint=False, openWorldHint=True))
 @_errores_como_herramienta
 async def emitir_en_produccion(borrador_id: str, numero: str, receptor: str, total: str, ctx: Context) -> CallToolResult:
@@ -142,7 +142,7 @@ async def emitir_en_produccion(borrador_id: str, numero: str, receptor: str, tot
     return _resultado(await flujo.emitir_borrador(datos, borrador_id, confirmar, esperado))
 
 
-@apps.tool(resource_uri=TARJETA, visibility=["app"],
+@apps.tool(title="Confirmar la emisión", resource_uri=TARJETA, visibility=["app"],
            annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False,
                                        openWorldHint=True))
 @_errores_como_herramienta
@@ -151,7 +151,7 @@ async def confirmar_emision(borrador_id: str, token: str, numero: str) -> CallTo
     return _resultado(await flujo.confirmar_pendiente(datos, borrador_id, token, numero))
 
 
-@apps.tool(resource_uri=TARJETA, visibility=["app"], annotations=LOCAL)
+@apps.tool(title="Estado de la confirmación", resource_uri=TARJETA, visibility=["app"], annotations=LOCAL)
 @_errores_como_herramienta
 async def estado_confirmacion(borrador_id: str) -> CallToolResult:
     """Solo para la tarjeta: si la confirmación sigue pendiente (con el resumen y un token para esta apertura), o si
@@ -159,7 +159,7 @@ async def estado_confirmacion(borrador_id: str) -> CallToolResult:
     return _resultado(flujo.abrir_pendiente(datos, borrador_id))
 
 
-@apps.tool(resource_uri=TARJETA, visibility=["app"],
+@apps.tool(title="Cancelar la emisión", resource_uri=TARJETA, visibility=["app"],
            annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
                                        openWorldHint=False))
 @_errores_como_herramienta
@@ -171,7 +171,7 @@ async def cancelar_emision(borrador_id: str, token: str) -> CallToolResult:
 mcp = MCPServer("facturador-afip", instructions=INSTRUCCIONES, extensions=[apps], version=version("facturador-afip-mcp"))
 
 
-@mcp.tool(annotations=LOCAL)
+@mcp.tool(title="Revisar la configuración", annotations=LOCAL)
 @_errores_como_herramienta
 async def estado_configuracion(ctx: Context) -> dict:
     """Muestra la configuración: carpeta de datos, CUIT, certificados (y cuándo vencen), perfil y cómo se va a
@@ -197,7 +197,7 @@ async def estado_configuracion(ctx: Context) -> dict:
     }
 
 
-@mcp.tool(annotations=LOCAL)
+@mcp.tool(title="Ver el perfil", annotations=LOCAL)
 @_errores_como_herramienta
 async def ver_perfil() -> dict:
     """Devuelve perfil.json: nombre, puntos de venta de producción, condición frente al IVA, cliente por defecto,
@@ -208,7 +208,7 @@ async def ver_perfil() -> dict:
     return perfil
 
 
-@mcp.tool(annotations=LECTURA)
+@mcp.tool(title="Probar la conexión con ARCA", annotations=LECTURA)
 @_errores_como_herramienta
 async def probar_conexion(entorno: Literal["homo", "prod"], servicio: Literal["wsfe", "wsfex"]) -> dict:
     """Prueba de solo lectura: estado del servicio, login y puntos de venta. wsfe: A, B y C; wsfex: Factura E."""
@@ -225,7 +225,7 @@ async def probar_conexion(entorno: Literal["homo", "prod"], servicio: Literal["w
     return await _hilo(probar)
 
 
-@mcp.tool(annotations=LECTURA)
+@mcp.tool(title="Último comprobante autorizado", annotations=LECTURA)
 @_errores_como_herramienta
 async def ultimo_comprobante(entorno: Literal["homo", "prod"], tipo: Literal["A", "B", "C", "E"],
                              nota_credito: bool = False, punto_venta: int | None = None) -> dict:
@@ -251,7 +251,7 @@ TABLAS = {
 }
 
 
-@mcp.tool(annotations=LECTURA)
+@mcp.tool(title="Buscar códigos de ARCA", annotations=LECTURA)
 @_errores_como_herramienta
 async def buscar_codigo(tabla: Literal["paises", "cuit_pais", "monedas"], texto: str) -> list[dict]:
     """Busca en las tablas de ARCA: código de país destino, CUIT genérico del país del cliente (uno para personas
@@ -270,7 +270,7 @@ def _resumen_registro(archivo):
             "total": f"{s.get('moneda')} {s.get('total')}", "cae": s.get("cae")}
 
 
-@mcp.tool(annotations=LOCAL)
+@mcp.tool(title="Listar comprobantes", annotations=LOCAL)
 @_errores_como_herramienta
 async def listar_comprobantes(entorno: Literal["homo", "prod"] = "prod", buscar: str | None = None,
                               limite: int = 20) -> list[dict]:
@@ -288,7 +288,7 @@ async def listar_comprobantes(entorno: Literal["homo", "prod"] = "prod", buscar:
     return resultado
 
 
-@mcp.tool(annotations=LOCAL)
+@mcp.tool(title="Ver un comprobante", annotations=LOCAL)
 @_errores_como_herramienta
 async def ver_comprobante(archivo: str, entorno: Literal["homo", "prod"] = "prod") -> dict:
     """JSON completo de un comprobante guardado (campo "factura": los datos originales, para reutilizarlos o para
@@ -296,7 +296,7 @@ async def ver_comprobante(archivo: str, entorno: Literal["homo", "prod"] = "prod
     return json.loads(datos.registro(entorno, archivo).read_text())
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True))
+@mcp.tool(title="Generar el PDF", annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True))
 @_errores_como_herramienta
 async def generar_pdf(archivo: str, entorno: Literal["homo", "prod"] = "prod") -> dict:
     """Regenera el PDF de un comprobante guardado, con el diseño de "Comprobantes en línea". No toca ARCA."""
@@ -304,7 +304,7 @@ async def generar_pdf(archivo: str, entorno: Literal["homo", "prod"] = "prod") -
     return {"pdf": str(await _hilo(datos.generar_pdf, json.loads(registro.read_text()), registro))}
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+@mcp.tool(title="Validar en homologación", annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False,
                                       openWorldHint=True))
 @_errores_como_herramienta
 async def validar_en_homologacion(factura: dict[str, Any], punto_venta_homo: int | None = None) -> dict:
@@ -315,7 +315,7 @@ async def validar_en_homologacion(factura: dict[str, Any], punto_venta_homo: int
     return await flujo.validar_en_homologacion(datos, factura, punto_venta_homo)
 
 
-@mcp.tool(annotations=LECTURA)
+@mcp.tool(title="Preparar la emisión", annotations=LECTURA)
 @_errores_como_herramienta
 async def preparar_emision(borrador_id: str) -> dict:
     """Arma la emisión en producción de un borrador SIN emitir: devuelve el número de comprobante, el receptor, el
@@ -324,7 +324,7 @@ async def preparar_emision(borrador_id: str) -> dict:
     return {**em.para_confirmar(), "cotizacion": em.prep.resumen["cotizacion"], "resumen": em.resumen}
 
 
-@mcp.tool(annotations=LOCAL)
+@mcp.tool(title="Listar borradores", annotations=LOCAL)
 @_errores_como_herramienta
 async def listar_borradores() -> list[dict]:
     """Borradores validados en homologación y su estado: validado, emitiendo o emitido."""
@@ -336,7 +336,7 @@ async def listar_borradores() -> list[dict]:
             for b in datos.listar_borradores()]
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
+@mcp.tool(title="Descartar un borrador", annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True,
                                       openWorldHint=False))
 @_errores_como_herramienta
 async def descartar_borrador(borrador_id: str) -> dict:

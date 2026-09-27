@@ -19,6 +19,8 @@ Le pedís a Claude la factura en lenguaje natural ("haceme la factura de septiem
 - [Alta en ARCA paso a paso](#alta-en-arca-paso-a-paso)
 - [Desarrollo](#desarrollo)
 - [Limitaciones](#limitaciones)
+- [Privacidad](#privacidad)
+- [Licencia](#licencia)
 
 ## Instalación
 
@@ -32,7 +34,20 @@ Requiere [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 Cada emisión se confirma en una tarjeta dentro del chat. Funciona en macOS y Windows.
 
-### Claude Code
+### Claude Code, como plugin
+
+El plugin instala el servidor y te pide la carpeta de datos al habilitarlo:
+
+```bash
+claude plugin marketplace add ignaciovilagraca/facturador-afip-mcp
+```
+```bash
+claude plugin install facturador-afip@facturador-afip-mcp
+```
+
+La carpeta [`plugin/`](plugin) es el plugin, y [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) hace que este repositorio funcione como marketplace.
+
+### Claude Code, como servidor MCP
 
 ```bash
 claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.facturador-afip -- uvx facturador-afip-mcp
@@ -349,7 +364,7 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
 
 ### Publicar una versión
 
-1. Subí la versión en `pyproject.toml` y en `manifest.json` (tienen que coincidir). La URI de la tarjeta la incluye, así los clientes no muestran una tarjeta vieja desde su caché.
+1. Subí la versión en `pyproject.toml`, `manifest.json`, `plugin/.claude-plugin/plugin.json` y en el `facturador-afip-mcp==<versión>` que lanza el plugin (tienen que coincidir). Publicá en PyPI antes de pushear el plugin: si no, el plugin apunta a una versión que todavía no existe. La URI de la tarjeta la incluye, así los clientes no muestran una tarjeta vieja desde su caché.
 2. PyPI:
    ```bash
    uv build && uv publish dist/facturador_afip_mcp-<versión>*
@@ -366,3 +381,17 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
 - Elicitation funciona con clientes que negocian el protocolo con el handshake `initialize` (el caso de Claude Code hoy). Con un cliente que use solo el protocolo 2026-07-28, la elicitation falla antes de emitir, así que no se emite nada.
 - La tarjeta depende de que el cliente cumpla la especificación de MCP Apps y no le muestre al modelo las herramientas de la tarjeta. Claude Desktop lo cumple.
 - El diálogo del sistema aparece en la computadora donde corre el servidor. Si le diste a Claude control de la pantalla (computer use), podría responderlo: no le des acceso a `osascript` ni a los diálogos del sistema.
+
+## Privacidad
+
+- **Qué datos usa:** tu CUIT y los datos del emisor (`.env`), tu clave privada y tus certificados de ARCA (`certs/`), tus preferencias (`perfil.json`) y los datos de las facturas que emitís, incluidos los de tus clientes.
+- **Dónde quedan:** todo se guarda en tu carpeta de datos, en tu computadora. El servidor no tiene base de datos propia ni servidores del autor, y no manda telemetría.
+- **Con quién se comparte:** el servidor solo se conecta con los web services de ARCA (`afip.gov.ar`) para autenticarse, consultar y emitir comprobantes. La clave privada nunca sale de tu computadora: se usa localmente para firmar el login. Los datos de las facturas que le das a Claude o que devuelven las herramientas pasan por Claude, según la [política de privacidad de Anthropic](https://www.anthropic.com/legal/privacy).
+- **Cuánto tiempo:** los comprobantes, borradores y tickets de acceso quedan en tu carpeta de datos hasta que los borres. Los tickets de ARCA vencen a las 12 horas.
+- **Contacto:** [issues del repositorio](https://github.com/ignaciovilagraca/facturador-afip-mcp/issues).
+
+## Licencia
+
+[MIT](LICENSE). El software se ofrece tal cual, sin garantías: revisá cada factura antes de confirmar su emisión en producción.
+
+El logo de ARCA (`src/facturador_afip_mcp/assets/arca_logo.png`) es de ARCA y no está cubierto por esta licencia; se usa solo para que el PDF replique el diseño de "Comprobantes en línea".

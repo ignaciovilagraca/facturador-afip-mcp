@@ -1,0 +1,15 @@
+{
+  "name": "facturador-afip-mcp",
+  "description": "Plugins de Ignacio Vila Graca para facturación electrónica en Argentina.",
+  "owner": {
+    "name": "Ignacio Vila Graca",
+    "url": "https://github.com/ignaciovilagraca"
+  },
+  "plugins": [
+    {
+      "name": "facturador-afip",
+      "source": "./plugin",
+      "description": "Facturas electrónicas de ARCA (ex AFIP) desde Claude: A, B, C, notas de crédito y Factura E."
+    }
+  ]
+}

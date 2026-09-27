@@ -9,3 +9,5 @@ tests/
 dist/
 *.mcpb
 .DS_Store
+plugin/
+.claude-plugin/
