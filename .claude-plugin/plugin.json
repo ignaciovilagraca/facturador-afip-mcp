@@ -39,8 +39,7 @@
         "${CLAUDE_PLUGIN_ROOT}/servidor.py"
       ],
       "env": {
-        "FACTURADOR_AFIP_DIR": "${user_config.carpeta_datos}",
-        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
+        "FACTURADOR_AFIP_DIR": "${user_config.carpeta_datos}"
       }
     }
   }

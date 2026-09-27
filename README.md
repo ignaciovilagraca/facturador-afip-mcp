@@ -45,7 +45,7 @@ claude plugin marketplace add ignaciovilagraca/facturador-afip-mcp
 claude plugin install facturador-afip@facturador-afip-mcp
 ```
 
-Este repositorio es el plugin ([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)) y también su marketplace ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)). El plugin corre el código de este repositorio con las dependencias exactas de `uv.lock`, en un entorno de Python propio dentro de la carpeta de datos del plugin.
+Este repositorio es el plugin ([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)) y también su marketplace ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)). El plugin corre el código de este repositorio con las dependencias exactas de `uv.lock`.
 
 El plugin funciona en Claude Code y Cowork. En claude.ai web no, porque el servidor corre en tu computadora; en Claude Desktop usá el `.mcpb`.
 
@@ -396,4 +396,4 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
 
 [MIT](LICENSE). El software se ofrece tal cual, sin garantías: revisá cada factura antes de confirmar su emisión en producción.
 
-El logo de ARCA (`src/facturador_afip_mcp/assets/arca_logo.png`) es de ARCA y no está cubierto por esta licencia; se usa solo para que el PDF replique el diseño de "Comprobantes en línea".
+El logo de ARCA que usa el PDF es de ARCA y no está cubierto por esta licencia; se usa solo para que el PDF replique el diseño de "Comprobantes en línea".
