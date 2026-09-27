@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "facturador-afip",
-      "source": "./plugin",
+      "source": "./",
       "description": "Facturas electrónicas de ARCA (ex AFIP) desde Claude: A, B, C, notas de crédito y Factura E."
     }
   ]

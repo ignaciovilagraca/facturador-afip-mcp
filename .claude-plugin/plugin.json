@@ -1,0 +1,47 @@
+{
+  "name": "facturador-afip",
+  "displayName": "Facturador ARCA",
+  "version": "0.2.0",
+  "description": "Prepará, validá y emití facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E. Te guía en el alta en ARCA y cada emisión en producción la confirma una persona.",
+  "author": {
+    "name": "Ignacio Vila Graca",
+    "url": "https://github.com/ignaciovilagraca"
+  },
+  "homepage": "https://github.com/ignaciovilagraca/facturador-afip-mcp#readme",
+  "repository": "https://github.com/ignaciovilagraca/facturador-afip-mcp",
+  "license": "MIT",
+  "keywords": [
+    "arca",
+    "afip",
+    "factura electronica",
+    "argentina",
+    "facturacion"
+  ],
+  "userConfig": {
+    "carpeta_datos": {
+      "type": "directory",
+      "title": "Carpeta de datos",
+      "description": "Donde el facturador guarda tu CUIT, tu clave y tus certificados de ARCA, tu perfil y tus facturas. Si todavía no la tenés, dejá la que viene: Claude te guía para crearla.",
+      "required": true,
+      "default": "~/.facturador-afip"
+    }
+  },
+  "mcpServers": {
+    "facturador-afip": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--frozen",
+        "--quiet",
+        "--directory",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/servidor.py"
+      ],
+      "env": {
+        "FACTURADOR_AFIP_DIR": "${user_config.carpeta_datos}",
+        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
+      }
+    }
+  }
+}

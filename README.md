@@ -45,7 +45,9 @@ claude plugin marketplace add ignaciovilagraca/facturador-afip-mcp
 claude plugin install facturador-afip@facturador-afip-mcp
 ```
 
-La carpeta [`plugin/`](plugin) es el plugin, y [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) hace que este repositorio funcione como marketplace.
+Este repositorio es el plugin ([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)) y también su marketplace ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)). El plugin corre el código de este repositorio con las dependencias exactas de `uv.lock`, en un entorno de Python propio dentro de la carpeta de datos del plugin.
+
+El plugin funciona en Claude Code y Cowork. En claude.ai web no, porque el servidor corre en tu computadora; en Claude Desktop usá el `.mcpb`.
 
 ### Claude Code, como servidor MCP
 
@@ -99,15 +101,16 @@ El paquete está en [PyPI](https://pypi.org/project/facturador-afip-mcp/). La co
 
 ## Primeros pasos
 
-1. **Credenciales.** Generá tu clave privada y los pedidos de certificado. Crea la carpeta de datos con `.env` y `perfil.json`:
-   ```bash
-   uvx facturador-afip-mcp init --cuit 20XXXXXXXXX --nombre "Tu nombre o razón social" --alias facturador1a2b3c
-   ```
-2. **Datos.** Completá `.env` (datos del emisor para el PDF) y `perfil.json` (puntos de venta, condición frente al IVA, cliente por defecto, formato y reglas de fechas). Hay ejemplos en [`ejemplos/`](ejemplos).
-3. **Alta en ARCA.** Pedí los certificados, autorizalos y dá de alta los puntos de venta: [Alta en ARCA paso a paso](#alta-en-arca-paso-a-paso), desde el paso 2.
-4. **Verificación.** Pedile a Claude "revisá la configuración del facturador": llama a `estado_configuracion` y `probar_conexion` y te dice qué falta.
+Pedile a Claude **"configurá el facturador"** (en Claude Code también está el comando `/configurar` del plugin). Claude revisa en qué paso estás y te guía hasta poder emitir:
 
-Si ya usás [facturador-afip](https://github.com/ignaciovilagraca/facturador-afip), no hace falta nada de esto: apuntá la carpeta de datos a la de ese proyecto.
+1. Te pide tu CUIT, tu nombre o razón social y los datos que van impresos en las facturas, y genera en tu computadora tu clave privada y el pedido de certificado (CSR). La clave nunca sale de tu computadora ni pasa por Claude.
+2. Te guía pantalla por pantalla en ARCA para obtener los certificados (WSASS en homologación, Administración de Certificados Digitales en producción). Le pasás el certificado que te da ARCA y lo guarda después de verificar que corresponda a tu clave y al entorno correcto.
+3. Te guía para autorizar el certificado y dar de alta el punto de venta, y te pregunta tus preferencias (cliente habitual, formato de la factura).
+4. Prueba la conexión con ARCA.
+
+Los pasos dentro de ARCA los hacés vos con tu clave fiscal. Si te trabás, pasale a Claude una captura o el mensaje de error.
+
+Si preferís la terminal, `uvx facturador-afip-mcp init --cuit ... --nombre ... --alias ...` hace el paso 1. Si ya usás [facturador-afip](https://github.com/ignaciovilagraca/facturador-afip), no hace falta nada de esto: apuntá la carpeta de datos a la de ese proyecto.
 
 ## Cómo se usa
 
@@ -161,7 +164,12 @@ Si arrancás de cero, `init` la crea: ver [Primeros pasos](#primeros-pasos).
 
 | Herramienta | Qué hace | Toca ARCA |
 |---|---|---|
-| `estado_configuracion` | Carpeta, CUIT, certificados y vencimiento, perfil, forma de confirmar | No |
+| `estado_configuracion` | En qué paso del alta estás, carpeta, CUIT, certificados y vencimiento, perfil, forma de confirmar | No |
+| `guia_alta_arca` | Guía del alta en ARCA y errores frecuentes, por sección | No |
+| `iniciar_configuracion` | Crea la carpeta de datos, guarda el CUIT y los datos del emisor, y genera la clave y los CSR | No |
+| `ver_csr` | El pedido de certificado de un entorno, para llevar a ARCA | No |
+| `guardar_certificado` | Verifica y guarda el certificado que da ARCA (texto de WSASS o ruta del `.crt`) | No |
+| `guardar_perfil` | Guarda las preferencias en `perfil.json` | No |
 | `ver_perfil` | `perfil.json` | No |
 | `probar_conexion` | Estado del servicio, login y puntos de venta | Solo lectura |
 | `ultimo_comprobante` | Último número autorizado | Solo lectura |
@@ -188,7 +196,8 @@ uvx facturador-afip-mcp emitir <borrador>   # emite un borrador, con confirmaci�
 
 ## Alta en ARCA paso a paso
 
-Los archivos van en la carpeta `certs/` de tu [carpeta de datos](#credenciales-y-carpeta-de-datos) (por defecto `~/.facturador-afip/certs/`).
+Lo más simple es hacerlo con Claude: pedile "configurá el facturador" y te guía paso a paso con esta misma guía, que viene dentro del servidor (`guia_alta_arca`).
+
 
 Para usar los web services de facturación hay que: generar una clave y un pedido de certificado, obtener el certificado en ARCA, autorizarlo para el servicio y, en producción, dar de alta un punto de venta para web services. Se hace una vez por entorno.
 
@@ -211,18 +220,12 @@ ARCA cambia seguido los nombres y la ubicación de los menús. Si alguno no coin
 
 - Clave fiscal nivel 3 o superior.
 
-### Paso 1: generar la clave privada y el pedido de certificado (CSR)
+### Paso 1: clave privada y pedido de certificado (CSR)
 
-Se hace en tu computadora, con un comando. La clave privada no se sube nunca a ningún lado:
+Lo hace el servidor con `iniciar_configuracion`: genera en la computadora de la persona una clave privada y un CSR por entorno, y escribe el CUIT y los datos del emisor. La clave privada nunca sale de la computadora ni se muestra. Los CSR son públicos: la herramienta los devuelve para pegarlos o subirlos en ARCA.
 
-```bash
-uvx facturador-afip-mcp init --cuit 20XXXXXXXXX --nombre "Tu nombre o razón social" --alias facturador1a2b3c
-```
-
-- `--nombre` es tu nombre o razón social.
-- `--alias` es un nombre para el certificado, **solo letras y números** (sin guiones ni espacios); si no, ARCA lo rechaza con "El Nombre simbólico del DN sólo puede contener números y/o letras".
-
-Genera una clave y un CSR por entorno: `certs/afip.key` y `certs/afip.csr` (homologación), `certs/afip_prod.key` y `certs/afip_prod.csr` (producción). También crea `.env` y `perfil.json` a partir de plantillas: completalos con los datos del emisor (van en el PDF), tus puntos de venta y tus preferencias. Nunca pisa una clave existente.
+- El alias va **solo con letras y números** (sin guiones, espacios ni acentos); si no, ARCA lo rechaza con "El Nombre simbólico del DN sólo puede contener números y/o letras". Ejemplo: `facturador1a2b3c`.
+- Los datos del emisor (razón social, domicilio comercial, condición frente al IVA, ingresos brutos, inicio de actividades) van impresos en el PDF de cada factura.
 
 ### Paso 2: homologación (entorno de pruebas)
 
@@ -234,9 +237,9 @@ Genera una clave y un CSR por entorno: `certs/afip.key` y `certs/afip.csr` (homo
    4. Cerrá sesión y volvé a entrar para que aparezca.
 3. En WSASS, elegí "Nuevo Certificado":
    1. En "Nombre simbólico del DN" poné el alias (el mismo `ALIAS` del CSR).
-   2. En "Solicitud de certificado en formato PKCS#10" pegá el contenido completo de `certs/afip.csr`, incluidas las líneas `-----BEGIN CERTIFICATE REQUEST-----` y `-----END CERTIFICATE REQUEST-----`.
+   2. En "Solicitud de certificado en formato PKCS#10" pegá el CSR de homologación que devolvió `iniciar_configuracion` (o `ver_csr`), incluidas las líneas `-----BEGIN CERTIFICATE REQUEST-----` y `-----END CERTIFICATE REQUEST-----`.
    3. Elegí "Crear DN y obtener certificado".
-   4. WSASS no da un archivo: muestra el certificado en la pantalla. Copiá el texto, desde `-----BEGIN CERTIFICATE-----` hasta `-----END CERTIFICATE-----`, y guardalo como `certs/afip_homo.crt`. Ojo con no confundirlo con el CSR, que empieza con `-----BEGIN CERTIFICATE REQUEST-----`.
+   4. WSASS no da un archivo: muestra el certificado en la pantalla. Copiá el texto, desde `-----BEGIN CERTIFICATE-----` hasta `-----END CERTIFICATE-----`, y pasáselo a Claude: lo guarda `guardar_certificado` con entorno `homo`, que verifica que corresponda a la clave. Ojo con no confundirlo con el CSR, que empieza con `-----BEGIN CERTIFICATE REQUEST-----`.
 4. En WSASS, elegí "Crear autorización a servicio":
    1. Nombre simbólico del DN: tu alias.
    2. CUIT representada: tu CUIT.
@@ -245,20 +248,18 @@ Genera una clave y un CSR por entorno: `certs/afip.key` y `certs/afip.csr` (homo
 
 En homologación no hace falta dar de alta puntos de venta: acepta cualquier número.
 
-### Paso 3: producción
-
-#### 3.1 Obtener el certificado
+### 3.1 Obtener el certificado
 
 1. Con clave fiscal, entrá a "Administración de Certificados Digitales". Si no aparece, adherilo como en el paso 2.2, buscando ARCA → Servicios interactivos → "Administración de Certificados Digitales".
 2. Elegí tu CUIT y después "Agregar alias".
-3. Poné el alias (solo letras y números), subí el archivo `certs/afip_prod.csr` y confirmá con "Agregar alias".
+3. Poné el alias (solo letras y números), subí el archivo del CSR de producción (`certs/afip_prod.csr` en la carpeta de datos; `ver_csr` muestra la ruta) y confirmá con "Agregar alias".
 4. En la lista de alias, tocá **"Ver"** en la fila de tu alias.
 5. En la pantalla siguiente, tocá **"Descargar"** en el certificado. Baja un archivo `.crt`.
-6. Guardalo como `certs/afip_prod.crt`.
+6. Decile a Claude dónde quedó el archivo (por ejemplo, en Descargas): lo guarda `guardar_certificado` con entorno `prod` y la ruta, y verifica que corresponda a la clave.
 
 El certificado de producción lo emite "Computadores" de AFIP (el de homologación, "Computadores Test"). ARCA usa como CN el alias que escribiste en la pantalla, aunque el CSR tenga otro.
 
-#### 3.2 Autorizar el certificado para el servicio
+### 3.2 Autorizar el certificado para el servicio
 
 1. Entrá a "Administrador de Relaciones de Clave Fiscal".
 2. Elegí "Nueva Relación".
@@ -270,7 +271,7 @@ Si aparece "El dador de la autorización no debe ser igual al autorizado", en "R
 
 Si también facturás al exterior, creá otra relación igual en Administrador de Relaciones de Clave Fiscal → Nueva Relación, con ARCA → WebServices → "Facturación Electrónica de Exportación" y el mismo Computador Fiscal. ARCA puede tardar unos minutos en aplicar una relación nueva.
 
-#### 3.3 Dar de alta el punto de venta
+### 3.3 Dar de alta el punto de venta
 
 Se necesita uno por tipo de factura: uno para las Facturas A, B y C y, si facturás al exterior, otro para la Factura E.
 
@@ -300,18 +301,18 @@ Con el ejemplo de la tabla de arriba, un monotributista que factura al exterior 
 | 5 | Factura Electrónica - Monotributo - Web Services | Factura C |
 | 4 | Comprobantes de Exportación - Web Services | Factura E |
 
-#### 3.4 Lista de control
+### 3.4 Lista de control
 
 Para cada servicio que vayas a usar (`wsfe`, `wsfex` o los dos):
 
-- [ ] Certificado de producción descargado en `certs/afip_prod.crt` (paso 3.1).
+- [ ] Certificado de producción guardado con `guardar_certificado` (paso 3.1).
 - [ ] Relación del alias como Computador Fiscal con el servicio (paso 3.2).
 - [ ] Punto de venta del sistema "... - Web Services" que corresponde (paso 3.3).
 - [ ] `probar_conexion` en producción muestra el punto de venta y el último número (paso 4).
 
 ### Paso 4: verificar
 
-Pedile a Claude que llame a `estado_configuracion` (muestra qué falta: CUIT, certificados, perfil) y a `probar_conexion` para cada entorno (`homo` y `prod`) y servicio (`wsfe` para A, B y C; `wsfex` para la E).
+Llamá a `estado_configuracion` (muestra qué falta: CUIT, certificados, perfil) y a `probar_conexion` para cada entorno (`homo` y `prod`) y servicio (`wsfe` para A, B y C; `wsfex` para la E).
 
 Son consultas de solo lectura: no emiten nada. Tiene que mostrar el servicio OK, el login en WSAA y, en producción, tu punto de venta con `N` (no bloqueado) y el último número emitido (0 si es nuevo). Errores frecuentes:
 
@@ -343,8 +344,8 @@ Son consultas de solo lectura: no emiten nada. Tiene que mostrar el servicio OK,
 
 Los certificados vencen a los 2 años (`estado_configuracion` muestra la fecha y cuántos días faltan). Para renovarlos alcanza con pedir un certificado nuevo para **el mismo alias y la misma clave**: las autorizaciones y relaciones son del alias, así que siguen valiendo.
 
-- **Homologación:** en WSASS → "Nuevo Certificado", poné el mismo alias como nombre simbólico del DN, pegá el mismo CSR (`certs/afip.csr`) y guardá el certificado que muestra como `certs/afip_homo.crt`.
-- **Producción:** en "Administración de Certificados Digitales", elegí tu CUIT, tocá "Ver" en la fila del alias y después "Agregar certificado"; subí el mismo `certs/afip_prod.csr`. En la pantalla del alias vas a ver dos certificados: tocá "Descargar" en el nuevo (el de vencimiento más lejano) y reemplazá `certs/afip_prod.crt`.
+- **Homologación:** en WSASS → "Nuevo Certificado", poné el mismo alias como nombre simbólico del DN, pegá el mismo CSR (`ver_csr`) y guardá el certificado nuevo con `guardar_certificado`.
+- **Producción:** en "Administración de Certificados Digitales", elegí tu CUIT, tocá "Ver" en la fila del alias y después "Agregar certificado"; subí el mismo CSR de producción. En la pantalla del alias vas a ver dos certificados: tocá "Descargar" en el nuevo (el de vencimiento más lejano) y guardalo con `guardar_certificado`.
 
 Si creés que la clave privada quedó expuesta, no renueves: generá una clave nueva con otro alias y hacé todo el alta de nuevo (certificado, autorizaciones y relaciones).
 
@@ -364,7 +365,7 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
 
 ### Publicar una versión
 
-1. Subí la versión en `pyproject.toml`, `manifest.json`, `plugin/.claude-plugin/plugin.json` y en el `facturador-afip-mcp==<versión>` que lanza el plugin (tienen que coincidir). Publicá en PyPI antes de pushear el plugin: si no, el plugin apunta a una versión que todavía no existe. La URI de la tarjeta la incluye, así los clientes no muestran una tarjeta vieja desde su caché.
+1. Subí la versión en `pyproject.toml`, `manifest.json` y `.claude-plugin/plugin.json` (tienen que coincidir). La URI de la tarjeta la incluye, así los clientes no muestran una tarjeta vieja desde su caché.
 2. PyPI:
    ```bash
    uv build && uv publish dist/facturador_afip_mcp-<versión>*
@@ -374,6 +375,7 @@ claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.factur
    npx @anthropic-ai/mcpb validate manifest.json && npx @anthropic-ai/mcpb pack . dist/facturador-afip.mcpb
    gh release create v<versión> dist/facturador-afip.mcpb --title "v<versión>" --notes "..."
    ```
+4. El plugin sale del commit: el marketplace de este repositorio y el directorio de Claude toman la rama `main`.
 
 ## Limitaciones
 

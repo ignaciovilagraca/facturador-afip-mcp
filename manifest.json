@@ -2,9 +2,9 @@
   "manifest_version": "0.4",
   "name": "facturador-afip-mcp",
   "display_name": "Facturador ARCA",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Prepará, validá y emití facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E.",
-  "long_description": "Emite comprobantes electrónicos de ARCA desde Claude. Cada factura se valida primero en homologación (sin valor fiscal). Para emitirla en producción, una persona confirma en una tarjeta dentro del chat tipeando el número de comprobante: el modelo no ve ese formulario y no puede confirmar por su cuenta. La clave privada y el certificado se leen de tu carpeta de datos y nunca pasan por el modelo.\n\nAntes de usarlo necesitás el alta en ARCA (certificados, autorizaciones y punto de venta). La herramienta estado_configuracion muestra qué falta.",
+  "long_description": "Emite comprobantes electrónicos de ARCA desde Claude. Cada factura se valida primero en homologación (sin valor fiscal). Para emitirla en producción, una persona confirma en una tarjeta dentro del chat tipeando el número de comprobante: el modelo no ve ese formulario y no puede confirmar por su cuenta. La clave privada y el certificado se leen de tu carpeta de datos y nunca pasan por el modelo.\n\nSi todavía no hiciste el alta en ARCA, pedile a Claude \"configurá el facturador\": genera tu clave y tu pedido de certificado en tu computadora, te guía pantalla por pantalla en ARCA y verifica cada certificado que le pases.",
   "author": {
     "name": "Ignacio Vila Graca",
     "url": "https://github.com/ignaciovilagraca"
@@ -38,7 +38,7 @@
     "carpeta_datos": {
       "type": "directory",
       "title": "Carpeta de datos",
-      "description": "Donde están .env (CUIT), certs/ (clave y certificados de ARCA), perfil.json y facturas/. Si usás facturador-afip, elegí esa carpeta.",
+      "description": "Donde el facturador guarda tu CUIT, tu clave y tus certificados de ARCA, tu perfil y tus facturas. Si todavía no la tenés, dejá la que viene: Claude te guía para crearla.",
       "required": true,
       "default": "${HOME}/.facturador-afip"
     }
@@ -47,6 +47,26 @@
     {
       "name": "estado_configuracion",
       "description": "Muestra qué falta configurar: CUIT, certificados, perfil y forma de confirmar"
+    },
+    {
+      "name": "guia_alta_arca",
+      "description": "Guía paso a paso del alta en ARCA y errores frecuentes"
+    },
+    {
+      "name": "iniciar_configuracion",
+      "description": "Crea la carpeta de datos, la clave privada y el pedido de certificado"
+    },
+    {
+      "name": "ver_csr",
+      "description": "Muestra el pedido de certificado para llevar a ARCA"
+    },
+    {
+      "name": "guardar_certificado",
+      "description": "Verifica y guarda el certificado que da ARCA"
+    },
+    {
+      "name": "guardar_perfil",
+      "description": "Guarda tus preferencias: puntos de venta, cliente habitual, formato"
     },
     {
       "name": "ver_perfil",
@@ -114,5 +134,12 @@
       "python": ">=3.11"
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "prompts": [
+    {
+      "name": "configurar",
+      "description": "Guía el alta en ARCA y la configuración del facturador",
+      "text": "Quiero configurar el facturador de ARCA. Revisá en qué paso estoy con estado_configuracion y guiame un paso por vez hasta poder emitir, siguiendo la guía de alta."
+    }
+  ]
 }

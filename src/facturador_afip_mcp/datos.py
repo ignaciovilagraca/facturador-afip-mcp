@@ -115,13 +115,14 @@ class Datos:
         return json.loads(archivo.read_text()) if archivo.exists() else None
 
     def credencial(self, env) -> Credencial:
+        guia = "Llamá a estado_configuracion: dice el siguiente paso del alta."
         if not self.cuit:
-            raise ErrorArca(f"Falta AFIP_CUIT en {self.raiz / '.env'}")
+            raise ErrorArca(f"El facturador todavía no está configurado (no hay CUIT en {self.raiz / '.env'}). {guia}")
         cfg = ENTORNOS[env]
         try:
             return Credencial(self.cuit, (self.certs / cfg["cert"]).read_bytes(), (self.certs / cfg["key"]).read_bytes())
         except FileNotFoundError as e:
-            raise ErrorArca(f"Falta el archivo {e.filename}") from e
+            raise ErrorArca(f"Falta el certificado o la clave de {env} ({e.filename}). {guia}") from e
 
     def login(self, env, servicio):
         return login(env, servicio, self.credencial(env), TicketsEnArchivo(self.certs), log=log.info)

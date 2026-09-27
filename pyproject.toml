@@ -1,6 +1,6 @@
 [project]
 name = "facturador-afip-mcp"
-version = "0.1.4"
+version = "0.2.0"
 description = "Servidor MCP para emitir facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E"
 readme = "README.md"
 authors = [

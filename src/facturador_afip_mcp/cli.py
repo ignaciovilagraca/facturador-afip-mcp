@@ -8,69 +8,27 @@
 La carpeta de datos es $FACTURADOR_AFIP_DIR, o ~/.facturador-afip si no está definida.
 """
 import argparse
-import re
 import sys
-from importlib import resources
 from pathlib import Path
 
 import anyio
 
 
 def _init(args):
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
+    from . import configuracion
+    from .arca import ErrorArca
     from .datos import Datos
 
     datos = Datos(Path(args.carpeta).expanduser()) if args.carpeta else Datos.desde_entorno()
-    cuit = re.sub(r"\D", "", args.cuit)
-    if len(cuit) != 11:
-        raise SystemExit("El CUIT tiene que tener 11 dígitos")
-    if not re.fullmatch(r"[A-Za-z0-9]{1,50}", args.alias):
-        raise SystemExit("El alias va solo con letras y números (ARCA rechaza guiones, espacios y acentos)")
-
-    datos.certs.mkdir(parents=True, exist_ok=True)
-    datos.certs.chmod(0o700)
-    (datos.facturas / "prod").mkdir(parents=True, exist_ok=True)
-    plantillas = resources.files("facturador_afip_mcp") / "plantillas"
-    env = datos.raiz / ".env"
-    if not env.exists():
-        texto = (plantillas / "env").read_text().replace("AFIP_CUIT=", f"AFIP_CUIT={cuit}", 1)
-        env.write_text(texto.replace("AFIP_RAZON_SOCIAL=", f"AFIP_RAZON_SOCIAL={args.nombre}", 1))
-        env.chmod(0o600)
-        print(f"Creado {env}: completá los datos del emisor")
-    perfil = datos.raiz / "perfil.json"
-    if not perfil.exists():
-        perfil.write_text((plantillas / "perfil.json").read_text())
-        print(f"Creado {perfil}: completalo con tus puntos de venta, cliente por defecto y formato")
-
-    sujeto = x509.Name([
-        x509.NameAttribute(NameOID.COUNTRY_NAME, "AR"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, args.nombre),
-        x509.NameAttribute(NameOID.COMMON_NAME, args.alias),
-        x509.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {cuit}"),
-    ])
-    for clave_nombre, csr_nombre in (("afip.key", "afip.csr"), ("afip_prod.key", "afip_prod.csr")):
-        clave_archivo, csr_archivo = datos.certs / clave_nombre, datos.certs / csr_nombre
-        if clave_archivo.exists():
-            # Nunca se pisa una clave: las autorizaciones de ARCA dependen de ella
-            print(f"Ya existe {clave_archivo}, no se toca")
-            clave = serialization.load_pem_private_key(clave_archivo.read_bytes(), password=None)
-        else:
-            clave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            clave_archivo.write_bytes(clave.private_bytes(serialization.Encoding.PEM,
-                                                          serialization.PrivateFormat.TraditionalOpenSSL,
-                                                          serialization.NoEncryption()))
-            clave_archivo.chmod(0o600)
-            print(f"Creada {clave_archivo} (no la compartas nunca)")
-        if not csr_archivo.exists():
-            csr = x509.CertificateSigningRequestBuilder().subject_name(sujeto).sign(clave, hashes.SHA256())
-            csr_archivo.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
-            print(f"Creado {csr_archivo}")
-    print("\nSiguiente paso: pedir los certificados en ARCA con esos CSR (README, 'Alta en ARCA'). "
-          f"Guardalos como {datos.certs / 'afip_homo.crt'} y {datos.certs / 'afip_prod.crt'}.")
+    try:
+        r = configuracion.iniciar(datos, args.cuit, args.nombre, args.alias)
+    except ErrorArca as e:
+        raise SystemExit(str(e)) from e
+    for archivo in r["creados"]:
+        print(f"Creado {datos.certs / archivo}")
+    print(f"\nCarpeta de datos: {r['carpeta']}")
+    print("Siguiente paso: pedir los certificados en ARCA con esos CSR. La forma más simple es pedirle a Claude "
+          "\"configurá el facturador\": te guía paso a paso.")
 
 
 def _borradores(_args):
