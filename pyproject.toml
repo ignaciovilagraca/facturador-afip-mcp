@@ -14,6 +14,11 @@ dependencies = [
     "qrcode>=8.2",
     "reportlab>=5.0.1",
 ]
+keywords = ["arca", "afip", "factura electronica", "argentina", "mcp"]
+
+[project.urls]
+Repository = "https://github.com/ignaciovilagraca/facturador-afip-mcp"
+Issues = "https://github.com/ignaciovilagraca/facturador-afip-mcp/issues"
 
 [project.scripts]
 facturador-afip-mcp = "facturador_afip_mcp.cli:main"
