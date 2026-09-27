@@ -52,7 +52,7 @@ El plugin funciona en Claude Code y Cowork. En claude.ai web no, porque el servi
 ### Claude Code, como servidor MCP
 
 ```bash
-claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.facturador-afip -- uvx facturador-afip-mcp
+claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=~/.facturador-afip -- uvx facturador-afip-mcp
 ```
 
 Permisos recomendados en `~/.claude/settings.json`: lectura sin preguntar, y `ask` explícito para emitir y descartar:
@@ -360,7 +360,7 @@ uv run pytest
 Los tests usan un cliente MCP en memoria y ARCA simulada: no salen a la red. Para probar la versión local en Claude Code:
 
 ```bash
-claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=$HOME/.facturador-afip -- uv run --directory $PWD facturador-afip-mcp
+claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=~/.facturador-afip -- uv run --directory ~/ruta/al/facturador-afip-mcp facturador-afip-mcp
 ```
 
 ### Publicar una versión
