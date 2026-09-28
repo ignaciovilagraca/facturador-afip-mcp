@@ -15,9 +15,9 @@ import anyio
 
 
 def _init(args):
-    from . import configuracion
-    from .arca import ErrorArca
-    from .datos import Datos
+    from facturador_afip import configuracion
+    from facturador_afip.arca import ErrorArca
+    from facturador_afip.datos import Datos
 
     datos = Datos(Path(args.carpeta).expanduser()) if args.carpeta else Datos.desde_entorno()
     try:
@@ -32,16 +32,17 @@ def _init(args):
 
 
 def _borradores(_args):
-    from .datos import Datos
+    from facturador_afip.datos import Datos
     for b in Datos.desde_entorno().listar_borradores():
         titulo = b["homologacion"].get("resumen", {}).get("titulo", "")
         print(f"{b['id']}\t{b['estado']}\t{titulo} (homologación)\t{(b.get('emision') or {}).get('comprobante', '')}")
 
 
 def _emitir(args):
+    from facturador_afip.arca import ErrorArca
+    from facturador_afip.datos import Datos
+
     from . import confirmacion, flujo
-    from .arca import ErrorArca
-    from .datos import Datos
     try:
         r = anyio.run(flujo.emitir_borrador, Datos.desde_entorno(), args.borrador, confirmacion.por_terminal)
     except ErrorArca as e:

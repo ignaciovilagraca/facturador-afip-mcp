@@ -9,8 +9,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from mcp.client.client import Client
 
+from facturador_afip.datos import Datos
+
 from facturador_afip_mcp import server
-from facturador_afip_mcp.datos import Datos
 
 CUIT = "20111111112"  # ficticio
 pytestmark = pytest.mark.anyio
@@ -44,7 +45,8 @@ def certificado_de_arca(datos, entorno, emisor=None, clave=None, vence_en_dias=7
     ca = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     ahora = datetime.now(timezone.utc)
     cert = (x509.CertificateBuilder()
-            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "prueba1a2b")]))
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "prueba1a2b"),
+                                     x509.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {CUIT}")]))
             .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,
                                                        emisor or ("Computadores Test" if entorno == "homo" else "Computadores"))]))
             .public_key(clave.public_key()).serial_number(x509.random_serial_number())

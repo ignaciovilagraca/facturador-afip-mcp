@@ -14,10 +14,12 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
-from . import configuracion, confirmacion, emision, flujo
-from .arca import (ErrorArca, punto_de_venta_activo, punto_de_venta_activo_fe, puntos_de_venta, puntos_de_venta_fe,
-                   tabla_parametro, wsfe, wsfex)
-from .datos import Datos
+from facturador_afip import configuracion, emision
+from facturador_afip.arca import (ErrorArca, punto_de_venta_activo, punto_de_venta_activo_fe, puntos_de_venta,
+                                  puntos_de_venta_fe, tabla_parametro, wsfe, wsfex)
+from facturador_afip.datos import Datos
+
+from . import confirmacion, flujo
 
 INSTRUCCIONES = """\
 Emite facturas electrónicas de ARCA (ex AFIP): Facturas A, B y C (WSFE), notas de crédito de A, B y C, y Factura E de \

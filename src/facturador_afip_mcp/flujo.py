@@ -17,9 +17,9 @@ from decimal import Decimal
 
 import anyio.to_thread
 
-from . import emision
-from .arca import Auth, ErrorArca, ultimo_comprobante, ultimo_comprobante_fe
-from .datos import Datos, huella
+from facturador_afip import emision
+from facturador_afip.arca import Auth, ErrorArca, ultimo_comprobante, ultimo_comprobante_fe
+from facturador_afip.datos import Datos, huella
 
 # Entorno de emisión real. Los tests lo cambian a "homo" para probar el flujo completo sin valor fiscal.
 ENTORNO_EMISION = "prod"

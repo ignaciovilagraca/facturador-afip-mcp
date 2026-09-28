@@ -20,7 +20,7 @@ import anyio.to_thread
 from mcp.server.apps import client_supports_apps
 from pydantic import BaseModel, Field
 
-from .arca import ErrorArca
+from facturador_afip.arca import ErrorArca
 
 ESPERA_SEGUNDOS = 300
 TITULO = "Facturador ARCA: emitir en PRODUCCIÓN"

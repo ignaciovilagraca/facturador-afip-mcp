@@ -356,6 +356,8 @@ uv sync
 uv run pytest
 ```
 
+El núcleo (login y web services de ARCA, emisión, PDF, carpeta de datos y alta guiada) es la biblioteca [facturador-afip](https://github.com/ignaciovilagraca/facturador-afip), que se instala como dependencia desde PyPI. Este repositorio tiene solo el servidor MCP: las herramientas, el flujo de borradores y la confirmación.
+
 Los tests usan un cliente MCP en memoria y ARCA simulada: no salen a la red. Para probar la versión local en Claude Code:
 
 ```bash

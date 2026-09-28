@@ -9,7 +9,6 @@ facturas/
 .env
 .env.*
 perfil.json
-!src/facturador_afip_mcp/plantillas/perfil.json
 *.pdf
 
 .venv/

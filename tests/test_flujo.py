@@ -6,9 +6,11 @@ from mcp.client.client import Client
 from mcp.client.extension import ClientExtension
 from mcp.types import ElicitResult
 
-from facturador_afip_mcp import confirmacion, emision, flujo, server
-from facturador_afip_mcp.arca import Auth, ErrorArca
-from facturador_afip_mcp.datos import Datos
+from facturador_afip import emision
+from facturador_afip.arca import Auth, ErrorArca
+from facturador_afip.datos import Datos
+
+from facturador_afip_mcp import confirmacion, flujo, server
 
 CUIT = "20111111112"  # ficticio
 AUTH = Auth("token", "sign", CUIT)
