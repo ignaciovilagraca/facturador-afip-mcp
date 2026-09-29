@@ -1,7 +1,7 @@
 {
   "name": "facturador-afip",
   "displayName": "Facturador ARCA",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Prepará, validá y emití facturas electrónicas de ARCA (ex AFIP): A, B, C, notas de crédito y Factura E. Te guía en el alta en ARCA y cada emisión en producción la confirma una persona.",
   "author": {
     "name": "Ignacio Vila Graca",
