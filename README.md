@@ -364,6 +364,10 @@ Los tests usan un cliente MCP en memoria y ARCA simulada: no salen a la red. Par
 claude mcp add facturador-afip --scope user -e FACTURADOR_AFIP_DIR=~/.facturador-afip -- uv run --directory ~/ruta/al/facturador-afip-mcp facturador-afip-mcp
 ```
 
+### Cambios
+
+`main` cambia solo por pull request: la CI (`.github/workflows/tests.yml`) corre `pytest` con Python 3.11 a 3.14 y tiene que pasar para poder mergear.
+
 ### Publicar una versión
 
 1. Subí la versión en `pyproject.toml`, `manifest.json` y `.claude-plugin/plugin.json` (tienen que coincidir). La URI de la tarjeta la incluye, así los clientes no muestran una tarjeta vieja desde su caché.
