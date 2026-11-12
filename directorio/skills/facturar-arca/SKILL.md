@@ -1,6 +1,6 @@
 ---
 name: facturar-arca
-description: Prepara, valida y emite facturas electrónicas de ARCA (ex AFIP) con el servidor MCP facturador-afip: Facturas A, B y C, notas de crédito y Factura E de exportación. La emisión en producción siempre la aprueba y la confirma una persona. Usala cuando pida hacer, emitir o preparar una factura, facturarle a un cliente, cobrar un trabajo al exterior, sacar un CAE, repetir la factura del mes, anular una factura o hacer una nota de crédito, o cuando pase un invoice para crear "la equivalente" en ARCA. También guía el alta en ARCA (clave y CSR, WSASS, certificados, Administrador de Relaciones, puntos de venta) y explica errores de ARCA.
+description: "Prepara, valida y emite facturas electrónicas de ARCA (ex AFIP) con el servidor MCP facturador-afip: Facturas A, B y C, notas de crédito y Factura E de exportación. La emisión en producción siempre la aprueba y la confirma una persona. Usala cuando pida hacer, emitir o preparar una factura, facturarle a un cliente, cobrar un trabajo al exterior, sacar un CAE, repetir la factura del mes, anular una factura o hacer una nota de crédito, o cuando pase un invoice para crear \"la equivalente\" en ARCA. También guía el alta en ARCA (clave y CSR, WSASS, certificados, Administrador de Relaciones, puntos de venta) y explica errores de ARCA."
 ---
 
 # Facturar en ARCA
