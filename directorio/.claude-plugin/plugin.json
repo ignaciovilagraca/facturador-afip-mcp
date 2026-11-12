@@ -1,0 +1,24 @@
+{
+  "name": "facturador-arca",
+  "displayName": "Facturador ARCA",
+  "version": "0.1.0",
+  "description": "Guía a Claude para preparar, validar y emitir facturas electrónicas de ARCA (ex AFIP) con el servidor MCP facturador-afip-mcp: A, B, C, notas de crédito y Factura E. Cada emisión en producción la confirma una persona.",
+  "author": {
+    "name": "Ignacio Vila Graca",
+    "url": "https://github.com/ignaciovilagraca"
+  },
+  "homepage": "https://github.com/ignaciovilagraca/facturador-afip-mcp/tree/main/directorio#readme",
+  "repository": "https://github.com/ignaciovilagraca/facturador-afip-mcp",
+  "documentationUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp#readme",
+  "privacyPolicyUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp#privacidad",
+  "supportUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp/issues",
+  "termsOfServiceUrl": "https://github.com/ignaciovilagraca/facturador-afip-mcp/blob/main/LICENSE",
+  "license": "MIT",
+  "keywords": [
+    "arca",
+    "afip",
+    "factura electronica",
+    "argentina",
+    "facturacion"
+  ]
+}

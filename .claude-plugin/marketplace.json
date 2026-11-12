@@ -10,6 +10,11 @@
       "name": "facturador-afip",
       "source": "./",
       "description": "Facturas electrónicas de ARCA (ex AFIP) desde Claude: A, B, C, notas de crédito y Factura E."
+    },
+    {
+      "name": "facturador-arca",
+      "source": "./directorio",
+      "description": "Solo la skill que guía la facturación de ARCA; usa el servidor facturador-afip instalado aparte."
     }
   ]
 }

@@ -47,6 +47,8 @@ claude plugin install facturador-afip@facturador-afip-mcp
 
 Este repositorio es el plugin ([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)) y también su marketplace ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)). El plugin corre el código de este repositorio con las dependencias exactas de `uv.lock`.
 
+Si ya tenés el servidor instalado de otra forma y solo querés la guía para Claude, en [`directorio/`](directorio/) está **facturador-arca**, un plugin con solo la skill, que es el que se publica en el directorio de plugins de Claude.
+
 El plugin funciona en Claude Code y Cowork. En claude.ai web no, porque el servidor corre en tu computadora; en Claude Desktop usá el `.mcpb`.
 
 ### Claude Code, como servidor MCP
