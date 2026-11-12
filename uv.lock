@@ -360,21 +360,28 @@ wheels = [
 [[package]]
 name = "facturador-afip"
 version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "vendor/facturador-afip" }
 dependencies = [
     { name = "cryptography" },
     { name = "pillow" },
     { name = "qrcode" },
     { name = "reportlab" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/58/473661c61dae9badeaf4318b60e5bcc635bea447bd73a6e913122c72f7d0/facturador_afip-0.1.0.tar.gz", hash = "sha256:d8071461c3d43ecc71875de98e8459aefb1a3949da3691b41af0f9ad2f18530a", size = 55818, upload-time = "2026-09-27T05:27:16.877Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/36/723b02915a8446ccae919f151f71b260cb22f24a990679cab79adc357745/facturador_afip-0.1.0-py3-none-any.whl", hash = "sha256:4fb3b973487afe5ff36d5b4ba259203423073af2ad653bcf3345caacbffb615b", size = 52108, upload-time = "2026-09-27T05:27:15.498Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "qrcode", specifier = ">=7" },
+    { name = "reportlab", specifier = ">=4" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "facturador-afip-mcp"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "facturador-afip" },
@@ -390,7 +397,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "facturador-afip", specifier = ">=0.1.0,<0.2" },
+    { name = "facturador-afip", editable = "vendor/facturador-afip" },
     { name = "mcp", specifier = ">=2.2,<3" },
 ]
 

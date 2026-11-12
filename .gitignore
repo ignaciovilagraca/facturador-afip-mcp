@@ -19,3 +19,6 @@ dist/
 
 # Hook local de pre-commit: no va al repo (el directorio de plugins lo marca como posible fuga de credenciales)
 .githooks/
+
+# Plantilla de la biblioteca copiada en vendor/ (no son datos de nadie)
+!vendor/facturador-afip/src/facturador_afip/plantillas/perfil.json
