@@ -1,7 +1,7 @@
 {
   "name": "facturador-arca",
   "displayName": "Facturador ARCA",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Guía a Claude para preparar, validar y emitir facturas electrónicas de ARCA (ex AFIP) con el servidor MCP facturador-afip-mcp: A, B, C, notas de crédito y Factura E. Cada emisión en producción la confirma una persona.",
   "author": {
     "name": "Ignacio Vila Graca",
